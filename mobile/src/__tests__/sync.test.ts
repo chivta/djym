@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createStore } from '../storage.ts';
 import { accountKey, createAccountStore } from '../accountStore.ts';
-import { apiURL, createApi, remoteWorkout, workoutBody } from '../api.ts';
+import { ApiError, apiURL, createApi, remoteWorkout, workoutBody } from '../api.ts';
 import type { Session } from '../api.ts';
 import { createAuth, LOGIN_KEY, SESSION_KEY } from '../auth.ts';
 import { createSync } from '../sync.ts';
@@ -434,4 +434,31 @@ test('sync: concurrent confirmed reloads share the sequence gate and do not disc
     assert.equal(requests, 1); assert.equal(store.load().workouts[0].notes, 'new edit while waiting');
     assert.deepEqual(errors, ['conflict','conflict']);
   } finally { db.close(); }
+});
+
+for (const prior of [null, session]) test(`auth: cancellation during final login removal restores ${prior ? 'prior session' : 'session absence'}`, async () => {
+  const secure = vault(), gate = deferred<void>(), started = deferred<void>();
+  if (prior) secure.data.set(SESSION_KEY, JSON.stringify(prior));
+  let delayed = false;
+  const delayedVault = { ...secure, async remove(key: string) {
+    if (key === LOGIN_KEY && !delayed) { delayed = true; started.resolve(); await gate.promise; }
+    await secure.remove(key);
+  } };
+  const api = createApi(base, fake(url => json(url.endsWith('/login')
+    ? { bot_url: 'https://t.me/fake_bot?start=x', nonce: 'n', expires_at: session.expiresAt }
+    : { status: 'confirmed', user_id: 2, session_token: 'new-token', expires_at: session.expiresAt })));
+  const auth = createAuth(base, api, delayedVault); await auth.start();
+  const poll = auth.poll(); await started.promise;
+  const cancel = auth.cancel(); gate.resolve(); await cancel;
+  assert.equal(await poll, null); assert.equal(secure.data.has(LOGIN_KEY), false);
+  assert.deepEqual((await createAuth(base, api, secure).restore()).session, prior);
+});
+
+test('auth: malformed stored session or login JSON returns typed invalid_response without deleting data', async () => {
+  const api = createApi(base, fake(() => { throw new Error('must not fetch'); }));
+  for (const key of [SESSION_KEY, LOGIN_KEY]) {
+    const secure = vault(); secure.data.set(key, '{broken');
+    await assert.rejects(createAuth(base, api, secure).restore(), e => e instanceof ApiError && e.code === 'invalid_response');
+    assert.equal(secure.data.get(key), '{broken');
+  }
 });

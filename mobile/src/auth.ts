@@ -3,6 +3,9 @@ import type { Api, Login, Session } from './api.ts';
 export const SESSION_KEY = 'djym.native.session';
 export const LOGIN_KEY = 'djym.native.login';
 export type Vault = { get(key: string): Promise<string | null>; set(key: string, value: string): Promise<void>; remove(key: string): Promise<void> };
+function storedRecord(json: string): Record<string, unknown> {
+  try { return record(JSON.parse(json)); } catch { throw new ApiError('invalid_response'); }
+}
 export function createAuth(base: string, api: Api, vault: Vault) {
   let generation = 0, polling = false, login: Login | null = null;
   let writes: Promise<void> = Promise.resolve();
@@ -12,14 +15,14 @@ export function createAuth(base: string, api: Api, vault: Vault) {
       const stored = await vault.get(SESSION_KEY), pending = await vault.get(LOGIN_KEY);
       let session: Session | null = null;
       if (stored) {
-        const v = record(JSON.parse(stored));
+        const v = storedRecord(stored);
         const url = apiURL(text(v.apiURL));
         const token = text(v.token);
         if (!token || /\s/.test(token)) throw new ApiError('invalid_response');
         if (url === base) session = { apiURL: url, userId: positive(v.userId), token, expiresAt: timestamp(v.expiresAt) };
       }
       if (pending) {
-        const v = record(JSON.parse(pending));
+        const v = storedRecord(pending);
         if (v.apiURL === base && Date.parse(timestamp(v.expires_at)) > Date.now()) {
           const nonce = text(v.nonce), bot = text(v.bot_url);
           if (!nonce || nonce.length > 128 || !/^https:\/\/t\.me\//.test(bot)) throw new ApiError('invalid_response');
@@ -47,12 +50,15 @@ export function createAuth(base: string, api: Api, vault: Vault) {
         await write(async () => {
           if (g !== generation) return;
           const previous = await vault.get(SESSION_KEY);
-          await vault.set(SESSION_KEY, JSON.stringify(session));
-          if (g !== generation) {
-            if (previous) await vault.set(SESSION_KEY, previous); else await vault.remove(SESSION_KEY);
-            return;
+          try {
+            await vault.set(SESSION_KEY, JSON.stringify(session));
+            if (g === generation) await vault.remove(LOGIN_KEY);
+          } finally {
+            // Cancellation can happen during either asynchronous vault operation.
+            if (g !== generation) {
+              if (previous !== null) await vault.set(SESSION_KEY, previous); else await vault.remove(SESSION_KEY);
+            }
           }
-          await vault.remove(LOGIN_KEY);
         });
         if (g !== generation) return null;
         login = null; return session;

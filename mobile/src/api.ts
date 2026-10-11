@@ -136,7 +136,7 @@ export function createApi(base: string, fetcher: typeof fetch = fetch) {
       if (!deleted) {
         if (validateDraft(toDraft(w)) || (w.title && !WORKOUT_TYPES.some(t => t === w.title))) throw new ApiError('request_failed');
         intake(w.kcal); intake(w.proteinG);
-        if (!!w.startedAt !== !!w.finishedAt) throw new ApiError('request_failed');
+        if (Boolean(w.startedAt) !== Boolean(w.finishedAt)) throw new ApiError('request_failed');
         if (w.startedAt && w.finishedAt) {
           timestamp(w.startedAt); timestamp(w.finishedAt);
           if (Date.parse(w.finishedAt) < Date.parse(w.startedAt)) throw new ApiError('request_failed');
