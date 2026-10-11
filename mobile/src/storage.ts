@@ -1,0 +1,59 @@
+import { parseDraft, parseWorkout, toWorkout } from './model.ts';
+import type { Draft, Workout } from './model.ts';
+
+export const DATABASE_NAME = 'djym.db';
+const SCHEMA_VERSION = 1;
+const DRAFT_KEY = 1;
+type Database = {
+  execSync(sql: string): void;
+  runSync(sql: string, ...params: (string | number)[]): void;
+  getFirstSync<T>(sql: string, ...params: (string | number)[]): T | null;
+  getAllSync<T>(sql: string): T[];
+  withTransactionSync(action: () => void): void;
+};
+
+export function createStore(db: Database) {
+  db.execSync('PRAGMA journal_mode = WAL;');
+  const version = db.getFirstSync<{ user_version: number }>('PRAGMA user_version;')?.user_version ?? 0;
+  if (version > SCHEMA_VERSION) throw new Error('unsupported_schema');
+  if (version < SCHEMA_VERSION) {
+    db.withTransactionSync(() => {
+      db.execSync(`
+        CREATE TABLE workouts (id TEXT PRIMARY KEY NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL);
+        CREATE TABLE draft (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
+        PRAGMA user_version = ${SCHEMA_VERSION};
+      `);
+    });
+  }
+  return {
+    load(): { workouts: Workout[]; draft: Draft | null } {
+      const workouts = db.getAllSync<{ payload: string }>('SELECT payload FROM workouts ORDER BY date DESC, rowid DESC;')
+        .map(row => parseWorkout(row.payload));
+      const row = db.getFirstSync<{ payload: string }>('SELECT payload FROM draft WHERE id = ?;', DRAFT_KEY);
+      return { workouts, draft: row ? parseDraft(row.payload) : null };
+    },
+    // Small synchronous writes finish before the next edit, save, or navigation action.
+    writeDraft(draft: Draft): void {
+      db.runSync('INSERT INTO draft (id, payload) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload = excluded.payload;', DRAFT_KEY, JSON.stringify(draft));
+    },
+    clearDraft(): void {
+      db.runSync('DELETE FROM draft WHERE id = ?;', DRAFT_KEY);
+    },
+    save(draft: Draft): Workout {
+      const workout = toWorkout(draft);
+      db.withTransactionSync(() => {
+        db.runSync('INSERT INTO workouts (id, date, payload) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET date = excluded.date, payload = excluded.payload;',
+          workout.id, workout.date, JSON.stringify(workout));
+        db.runSync('DELETE FROM draft WHERE id = ?;', DRAFT_KEY);
+      });
+      return workout;
+    },
+    remove(id: string): void {
+      db.withTransactionSync(() => {
+        db.runSync('DELETE FROM workouts WHERE id = ?;', id);
+        db.runSync('DELETE FROM draft WHERE id = ?;', DRAFT_KEY);
+      });
+    },
+  };
+}
+export type Store = ReturnType<typeof createStore>;

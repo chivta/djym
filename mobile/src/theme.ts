@@ -1,0 +1,43 @@
+import { StyleSheet } from 'react-native';
+
+export const colors = {
+  bg: '#10141b', card: '#1a202b', input: '#111720', text: '#eef2f7', muted: '#98a5b8',
+  accent: '#93deb0', onAccent: '#0c2817', border: '#303a49', error: '#ffacaa',
+};
+export const space = { xs: 4, sm: 8, md: 12, lg: 20, xl: 32 };
+export const radius = 16;
+export const TOUCH_TARGET = 48;
+export const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: space.lg, gap: space.lg, paddingBottom: space.xl },
+  header: { paddingHorizontal: space.lg, paddingVertical: space.md, borderBottomWidth: 1, borderBottomColor: colors.border, gap: space.sm },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
+  flex: { flex: 1 },
+  brand: { fontSize: 36, fontWeight: '800', letterSpacing: -1.5, color: colors.text },
+  heading: { fontSize: 26, fontWeight: '700', color: colors.text },
+  title: { fontSize: 19, fontWeight: '600', color: colors.text },
+  text: { fontSize: 16, color: colors.text, lineHeight: 24 },
+  muted: { fontSize: 14, color: colors.muted, lineHeight: 21 },
+  eyebrow: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: colors.accent },
+  label: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  card: { backgroundColor: colors.card, borderRadius: radius, padding: space.lg, gap: space.md, borderWidth: 1, borderColor: colors.border },
+  input: { minHeight: TOUCH_TARGET, backgroundColor: colors.input, borderRadius: space.sm, padding: space.md, borderWidth: 1, borderColor: colors.border, color: colors.text, fontSize: 16 },
+  notes: { minHeight: 96, textAlignVertical: 'top' },
+  button: { minHeight: TOUCH_TARGET, paddingHorizontal: space.lg, paddingVertical: space.md, borderRadius: space.md, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  secondary: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
+  buttonText: { fontSize: 16, fontWeight: '700', color: colors.onAccent },
+  secondaryText: { color: colors.text },
+  dangerText: { color: colors.error },
+  disabled: { opacity: 0.5 },
+  pressed: { opacity: 0.75 },
+  field: { gap: space.sm },
+  center: { flex: 1, justifyContent: 'center', padding: space.xl, gap: space.lg },
+  empty: { paddingVertical: space.xl, gap: space.md },
+  error: { color: colors.error, fontSize: 14, lineHeight: 21 },
+  setNumber: { width: 32, color: colors.muted, fontSize: 16, textAlign: 'center' },
+  setInput: { flex: 1, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  setLabel: { flex: 1, textAlign: 'center', color: colors.muted, fontSize: 12 },
+  removeButton: { width: TOUCH_TARGET, height: TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' },
+  removeText: { fontSize: 24, color: colors.muted },
+});

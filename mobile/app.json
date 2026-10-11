@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "djym",
+    "slug": "djym-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#10141b"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.djym.mobile"
+    },
+    "android": {
+      "package": "com.djym.mobile",
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "plugins": [
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": false,
+          "useSQLCipher": false
+        }
+      ],
+      "expo-status-bar"
+    ]
+  }
+}
