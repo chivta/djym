@@ -26,6 +26,24 @@ npm run ios
 
 These commands generate ignored native projects and compile them. A release build with its bundled JavaScript runs without Metro or an internet connection. Development builds and Expo Go may need Metro to launch or reload. Browser support is not configured.
 
+## Standalone Android releases
+
+Publishing a GitHub Release runs `.github/workflows/android-release.yaml` at that release's tag. Tags must be `vX.Y.Z`, optionally followed by a safe prerelease suffix such as `v1.2.3-rc.1`. The workflow runs Expo prebuild and Gradle `:app:assembleRelease`, verifies the APK signature with `apksigner`, and uploads `djym-<version>.apk` and `djym-<version>.apk.sha256` to that exact Release. Rerunning a release build replaces those assets. The APK bundles the app and works without Metro; this is a universal, signed APK for direct installation, not a Play Store AAB. No EAS account is needed.
+
+Before running it, a repository administrator must provision these GitHub Actions repository secrets:
+
+- `ANDROID_KEYSTORE_BASE64`: base64-encoded production PKCS12 keystore.
+- `ANDROID_KEYSTORE_PASSWORD`: the shared keystore and private-key password.
+- `ANDROID_KEY_ALIAS`: the private-key alias in that keystore.
+
+Keep the same production signing key across releases and back it up securely. The workflow decodes it into the runner's temporary directory, passes signing settings through environment reads (not generated Gradle properties or command-line passwords), and removes the decoded file even after failure. Missing secrets stop the build; CI never falls back to Expo's generated debug signer. Native Android projects remain generated and ignored, and local development commands are unchanged.
+
+For a smoke build, choose **Actions → Android release → Run workflow** and select the branch or tag to build. This uses the version configured in `mobile/app.json` and uploads APK/checksum Actions artifacts, retained for 14 days; it does not create, publish, or change a GitHub Release. The selected ref must contain the workflow and release scripts. Both modes require the signing secrets.
+
+Android `versionCode` uses this workflow's `github.run_number` (1–2100000000), so later workflow runs have increasing install versions. Rerunning the same run keeps its code. Do not replace/reset this workflow's run history if you need to preserve update ordering. With the same application ID (`com.djym.mobile`), stable signing key, and increasing versionCode, users can install an update over a previous release without uninstalling or losing the local workout database. An older build or differently signed development APK may not install as an update. Uninstalling or clearing app data erases the local log; Expo Go data is separate.
+
+The release transformation intentionally rejects unexpected Expo Gradle template changes. After upgrading Expo, recheck the generated signing/version blocks and the focused tests before distributing another APK. GitHub-hosted runners supply the Android SDK; Java 17 follows the Expo 57 / React Native Gradle plugin's configured toolchain.
+
 ## Log a workout
 
 Tap "Log a workout", enter the date as YYYY-MM-DD, and add exercises. Each set records kg and reps. Use 0 kg for no external weight. "Add set" copies the previous set's values.
@@ -47,6 +65,7 @@ There is no sync, export, backup, or application-level database encryption. Clea
 ```sh
 npm run typecheck
 npm test
+node --test scripts/android-release.test.mjs
 npx expo install --check
 npx expo export --platform all --max-workers 2
 ```
