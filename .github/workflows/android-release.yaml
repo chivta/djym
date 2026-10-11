@@ -22,6 +22,7 @@ jobs:
         shell: bash
     env:
       CI: '1'
+      EXPO_PUBLIC_API_URL: https://gymbro.chivtar.dev/api
       RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -2,13 +2,13 @@ import { parseDraft, parseWorkout, toWorkout } from './model.ts';
 import type { Draft, Workout } from './model.ts';
 
 export const DATABASE_NAME = 'djym.db';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const DRAFT_KEY = 1;
-type Database = {
+export type Database = {
   execSync(sql: string): void;
   runSync(sql: string, ...params: (string | number)[]): void;
   getFirstSync<T>(sql: string, ...params: (string | number)[]): T | null;
-  getAllSync<T>(sql: string): T[];
+  getAllSync<T>(sql: string, ...params: (string | number)[]): T[];
   withTransactionSync(action: () => void): void;
 };
 
@@ -16,12 +16,23 @@ export function createStore(db: Database) {
   db.execSync('PRAGMA journal_mode = WAL;');
   const version = db.getFirstSync<{ user_version: number }>('PRAGMA user_version;')?.user_version ?? 0;
   if (version > SCHEMA_VERSION) throw new Error('unsupported_schema');
-  if (version < SCHEMA_VERSION) {
+  if (version < 1) {
     db.withTransactionSync(() => {
       db.execSync(`
         CREATE TABLE workouts (id TEXT PRIMARY KEY NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL);
         CREATE TABLE draft (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
-        PRAGMA user_version = ${SCHEMA_VERSION};
+        PRAGMA user_version = 1;
+      `);
+    });
+  }
+  if (version < 2) {
+    db.withTransactionSync(() => {
+      db.execSync(`
+        CREATE TABLE account_workouts (account TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL,
+          generation INTEGER NOT NULL, pending INTEGER NOT NULL, deleted INTEGER NOT NULL,
+          submitted INTEGER NOT NULL, error TEXT NOT NULL, PRIMARY KEY(account, id));
+        CREATE TABLE account_drafts (account TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL);
+        PRAGMA user_version = 2;
       `);
     });
   }

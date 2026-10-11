@@ -7,7 +7,12 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export type DraftSet = { id: string; kg: string; reps: string };
 export type DraftExercise = { id: string; name: string; sets: DraftSet[] };
-export type Draft = {
+export const WORKOUT_TYPES = ['push+pull', 'push+lower', 'lower', 'upper', 'push', 'pull', 'full body', 'workout A', 'workout B', 'день 1', 'день 2', 'руки', 'рест'] as const;
+export type Metadata = {
+  remoteId?: number; revision?: string; source?: string; sourceRef?: string;
+  kcal?: number | null; proteinG?: number | null; startedAt?: string | null; finishedAt?: string | null;
+};
+export type Draft = Metadata & {
   id: string;
   date: string;
   title: string;
@@ -36,15 +41,15 @@ export function newDraft(id: string): Draft {
 
 export function validateDraft(draft: Draft): ValidationIssue | null {
   if (!isDate(draft.date)) return { code: 'date' };
-  if (!draft.exercises.length) return { code: 'exercises' };
+  if (!draft.exercises.length && !draft.remoteId) return { code: 'exercises' };
   for (const [exercise, entry] of draft.exercises.entries()) {
     if (!entry.name.trim()) return { code: 'name', exercise };
-    if (!entry.sets.length) return { code: 'sets', exercise };
+    if (!entry.sets.length && !draft.remoteId) return { code: 'sets', exercise };
     for (const [set, value] of entry.sets.entries()) {
       const kg = value.kg.trim();
       const reps = value.reps.trim();
       if (!WEIGHT_PATTERN.test(kg) || Number(kg.replace(',', '.')) > MAX_WEIGHT) return { code: 'weight', exercise, set };
-      if (!REPS_PATTERN.test(reps) || Number(reps) < 1 || Number(reps) > MAX_REPS) return { code: 'reps', exercise, set };
+      if (!REPS_PATTERN.test(reps) || !Number.isSafeInteger(Number(reps)) || Number(reps) < 1 || (!draft.remoteId && Number(reps) > MAX_REPS)) return { code: 'reps', exercise, set };
     }
   }
   return null;
@@ -83,6 +88,15 @@ function hasHeader(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && typeof value.id === 'string' && value.id.length > 0 &&
     typeof value.date === 'string' && typeof value.title === 'string' && typeof value.notes === 'string' && Array.isArray(value.exercises);
 }
+function hasMetadata(value: Record<string, unknown>): boolean {
+  const time = (v: unknown) => typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(v) && Number.isFinite(Date.parse(v));
+  if (value.remoteId !== undefined && (typeof value.remoteId !== 'number' || !Number.isSafeInteger(value.remoteId) || value.remoteId < 1 || !time(value.revision))) return false;
+  if (value.revision !== undefined && !time(value.revision)) return false;
+  for (const key of ['source', 'sourceRef']) if (value[key] !== undefined && typeof value[key] !== 'string') return false;
+  for (const key of ['kcal', 'proteinG']) if (value[key] != null && (typeof value[key] !== 'number' || !Number.isSafeInteger(value[key]) || (value[key] as number) < 0)) return false;
+  for (const key of ['startedAt', 'finishedAt']) if (value[key] != null && !time(value[key])) return false;
+  return true;
+}
 function hasEntries(value: Record<string, unknown>, saved: boolean): boolean {
   return (value.exercises as unknown[]).every(entry => isRecord(entry) && typeof entry.id === 'string' &&
     typeof entry.name === 'string' && Array.isArray(entry.sets) && entry.sets.every(set =>
@@ -91,7 +105,7 @@ function hasEntries(value: Record<string, unknown>, saved: boolean): boolean {
 export function parseDraft(json: string): Draft {
   try {
     const value: unknown = JSON.parse(json);
-    if (!hasHeader(value) || !hasEntries(value, false)) throw new Error('invalid_storage');
+    if (!hasHeader(value) || !hasEntries(value, false) || !hasMetadata(value)) throw new Error('invalid_storage');
     return value as Draft;
   } catch {
     throw new Error('invalid_storage');
@@ -100,7 +114,7 @@ export function parseDraft(json: string): Draft {
 export function parseWorkout(json: string): Workout {
   try {
     const value: unknown = JSON.parse(json);
-    if (!hasHeader(value) || !hasEntries(value, true)) throw new Error('invalid_storage');
+    if (!hasHeader(value) || !hasEntries(value, true) || !hasMetadata(value)) throw new Error('invalid_storage');
     const workout = value as Workout;
     if (validateDraft(toDraft(workout))) throw new Error('invalid_storage');
     return workout;

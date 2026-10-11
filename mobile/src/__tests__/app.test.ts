@@ -201,7 +201,7 @@ test('unsupported schemas and corrupt JSON do not reset the database', context =
   db.prepare('INSERT INTO workouts (id, date, payload) VALUES (?, ?, ?)').run('broken', '2026-10-11', '{broken');
   assert.throws(() => store.load(), /invalid_storage/);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM workouts').get()?.count, 1);
-  db.exec('PRAGMA user_version = 2;');
+  db.exec('PRAGMA user_version = 3;');
   assert.throws(() => createStore(adapter(db)), /unsupported_schema/);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM workouts').get()?.count, 1);
 });

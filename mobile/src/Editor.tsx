@@ -1,6 +1,6 @@
 import { randomUUID } from 'expo-crypto';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { MAX_TEXT_LENGTH } from './model';
+import { MAX_TEXT_LENGTH, WORKOUT_TYPES } from './model';
 import type { Draft, DraftExercise, DraftSet } from './model';
 import { t } from './i18n';
 import { colors, styles, TOUCH_TARGET } from './theme';
@@ -44,8 +44,11 @@ export function Editor({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
       <Card>
         <Field label={t.date} value={draft.date} onChangeText={date => onChange({ ...draft, date })}
           placeholder={t.datePlaceholder} maxLength={DATE_INPUT_LENGTH} autoCorrect={false} autoCapitalize="none" keyboardType="numbers-and-punctuation" />
-        <Field label={t.optionalLabel(t.title)} value={draft.title} onChangeText={title => onChange({ ...draft, title })}
-          placeholder={t.titlePlaceholder} maxLength={MAX_TEXT_LENGTH} />
+        <Text style={styles.muted}>{t.optionalLabel(t.title)}</Text>
+        <View style={styles.field}>
+          <Button label={draft.title ? t.noType : `✓ ${t.noType}`} secondary onPress={() => onChange({ ...draft, title: '' })} />
+          {WORKOUT_TYPES.map(type => <Button key={type} label={`${draft.title === type ? '✓ ' : ''}${t.types[type]}`} secondary onPress={() => onChange({ ...draft, title: type })} />)}
+        </View>
         <Field label={t.optionalLabel(t.notes)} value={draft.notes} onChangeText={notes => onChange({ ...draft, notes })}
           placeholder={t.notesPlaceholder} maxLength={MAX_TEXT_LENGTH} multiline />
       </Card>

@@ -1,14 +1,18 @@
 # djym mobile
 
-A local-only workout log for Android and iOS, built with Expo and React Native. The existing Go API, Telegram bot, and web app remain separate. This app does not sign in, call the API, or sync workouts.
+An offline-first workout log for Android and iOS, built with Expo and React Native. Sign in with the existing Telegram bot to load and edit account history. Workouts and drafts save to an account-isolated SQLite cache; pending writes sync when the app is active and connected.
 
 ## Run locally
 
 ```sh
 cd mobile
 npm ci
+cp .example.env .env
+# Replace EXPO_PUBLIC_API_URL with your development API base URL (including /api if proxied).
 npm start
 ```
+
+The API URL is required: invalid or missing configuration displays a setup error rather than silently selecting a server. Dotenv files stay ignored. Never put a bot secret or session token in the public environment. The Android release workflow supplies `EXPO_PUBLIC_API_URL=https://gymbro.chivtar.dev/api`; development and export commands must explicitly configure their own endpoint. A phone must be able to reach the configured API (localhost on the phone is not your development machine).
 
 Open the QR code with a compatible Expo Go installation. Both the phone and development machine need to reach the development server to load the app. Workouts and drafts stay on the phone, not on the development machine.
 
@@ -24,7 +28,7 @@ On macOS with Xcode installed:
 npm run ios
 ```
 
-These commands generate ignored native projects and compile them. A release build with its bundled JavaScript runs without Metro or an internet connection. Development builds and Expo Go may need Metro to launch or reload. Browser support is not configured.
+These commands generate ignored native projects and compile them. A release build with its bundled JavaScript runs without Metro. Initial sign-in and uncached history require connectivity; an existing cached account can log/edit offline. Development builds and Expo Go may need Metro to launch or reload. Browser support is not configured.
 
 ## Standalone Android releases
 
@@ -44,21 +48,31 @@ Android `versionCode` uses this workflow's `github.run_number` (1–2100000000),
 
 The release transformation intentionally rejects unexpected Expo Gradle template changes. After upgrading Expo, recheck the generated signing/version blocks and the focused tests before distributing another APK. GitHub-hosted runners supply the Android SDK; Java 17 follows the Expo 57 / React Native Gradle plugin's configured toolchain.
 
+## Sign-in, import, and sync
+
+Tap "Sign in with Telegram" to open the bot deep link. Confirm in Telegram and return to the app: polling only runs while active. Cancel or restart an expired request. Native session envelopes and pending login nonces are stored in Expo SecureStore, never in SQLite. No cookie authentication or shared bot secret is used.
+
+After sign-in, all pages of history are cached. Cached history appears immediately on later starts. Manual "Sync / retry", foreground resume, local mutations, and a bounded foreground retry interval trigger sync. A failed full fetch never replaces history with an empty list. A revoked/expired session prompts sign-in but keeps edits. Sign-out hides the account immediately, clears its secure credentials, and attempts server revocation; offline revocation can fail, and the server session then lasts until its expiry. Signing back into the same API URL/user restores pending changes; a different user or endpoint cannot see them.
+
+The SQLite v1 migration retains old local workouts and the old draft as **unassigned** data. "Import old local data" asks for confirmation naming the target account and API endpoint. It atomically moves those records into that account and queues saves. Unrecognized legacy workout names are preserved in notes; recognized types become canonical types. An existing account draft blocks import without changing either dataset: finish/discard it first.
+
+Remote edits/deletes use the stored exact `updated_at` revision. A conflict or remote deletion retains the local change and shows "Reload server version". This confirmed action fetches the newest record and discards the local change (or removes the copy if the server deleted it); there is no force-overwrite action. Creates use a stable UUID `source_ref`, even after lost acknowledgments. An in-flight create deleted locally finishes its idempotent create before issuing its durable delete. Newer local edits cannot be cleared by older acknowledgments, and old-account responses are invalidated after account/token changes.
+
 ## Log a workout
 
-Tap "Log a workout", enter the date as YYYY-MM-DD, and add exercises. Each set records kg and reps. Use 0 kg for no external weight. "Add set" copies the previous set's values.
+Tap "Log a workout", enter the date as YYYY-MM-DD, optionally select a closed workout type and notes, and add exercises. Each set records kg and reps. Use 0 kg for no external weight. "Add set" copies the previous set's values.
 
 Edits save immediately to a local SQLite draft. Back returns to history without discarding it. After restarting the app, tap "Resume draft" to continue. A failed draft write shows a retry action; keep the app open until the draft saves.
 
 "Save workout" validates all entries, saves the workout, and clears its draft in one transaction. Tap a saved workout to inspect or edit it. Re-saving updates that workout rather than creating a duplicate. Several workouts can share a date. Discarding an edit keeps the previously saved workout unchanged. Deletion requires confirmation.
 
-Dates are calendar dates, weights have at most two decimal places from 0 to 9999.99 kg, and reps are whole numbers from 1 to 9999. Exercise names are free text. Names and sets keep their order. A dot or comma works as the weight's decimal separator.
+Dates are calendar dates, weights have at most two decimal places from 0 to 9999.99 kg, and reps are whole numbers from 1 to 9999. Exercise names are free text. Names and sets keep their order. Historical empty entries/sets stay empty. Historical intake and timestamps are preserved even though the minimal editor does not expose controls for them; source identity never changes when editing. A dot or comma works as the weight's decimal separator.
 
 ## Storage and limits
 
-SQLite stores normalized workout records and one draft as JSON in `djym.db`. Small synchronous writes complete before another edit or save can run. Startup rejects malformed records or an unsupported schema without resetting the log.
+SQLite stores JSON workout records, account-specific drafts, and durable mutation generations/tombstones in `djym.db`. Cache isolation is by normalized API URL and user ID. The previous v1 tables remain available until explicit import. Small synchronous writes complete before another edit or save can run. Startup rejects malformed records or an unsupported schema without resetting the log.
 
-There is no sync, export, backup, or application-level database encryption. Clearing app data or uninstalling can erase the log. Expo Go stores the database inside its own app data. Workouts created there do not automatically transfer to a standalone installation.
+There is no background sync worker, export, or application-level database encryption. Pending changes only sync in the foreground. SecureStore credentials are separate from the cache; reinstall/OS restore behavior varies by platform. Clearing app data or uninstalling can erase the log. Expo Go stores the database inside its own app data. Workouts created there do not automatically transfer to a standalone installation.
 
 ## Verification
 
@@ -67,10 +81,11 @@ npm run typecheck
 npm test
 node --test scripts/android-release.test.mjs
 npx expo install --check
-npx expo export --platform all --max-workers 2
+EXPO_PUBLIC_API_URL=https://your-development-host.example/api npx expo export --platform android --max-workers 2
+EXPO_PUBLIC_API_URL=https://your-development-host.example/api npx expo export --platform ios --max-workers 2
 ```
 
-Tests use Node's native TypeScript support, test runner, and SQLite. They were run on Node 26.11.1. They cover validation, stored-data parsing, persistence across database reopen, stable-ID updates, same-day sessions, draft replacement, transaction rollback, discard, deletion, and history ordering. Tests exercise real SQLite through a small adapter; they do not exercise Expo's native bridge or render the UI.
+Tests use Node's native TypeScript support, test runner, and SQLite. They were run on Node 26.11.1. They cover validation, stored-data parsing, persistence across database reopen, stable-ID updates, same-day sessions, draft replacement, transaction rollback, discard, deletion, and history ordering. Additional controlled fake-fetch tests cover v1 migration/import rollback, account/API isolation, all-page fetches, metadata, historical empty sets, create idempotency, outbox rollback, in-flight edit/delete acknowledgments, conflict reload, 401/expiry, logout invalidation, and secure-login cancellation. Tests exercise real Node SQLite through a small adapter; they do not exercise Expo's native bridge or render the UI.
 
 Android and iOS JavaScript/Hermes bundle exports passed. No emulator or physical-device testing was performed.
 
