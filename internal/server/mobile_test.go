@@ -53,6 +53,9 @@ func (f *mobileStoreFake) SaveWorkout(_ context.Context, _ int64, req apiclient.
 	f.calls++
 	return apiclient.SaveWorkoutResponse{WorkoutID: 7, Created: true, UpdatedAt: revision, NewExercises: []string{}}, f.mutationErr
 }
+func (f *mobileStoreFake) CreateWorkout(ctx context.Context, userID int64, req apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
+	return f.SaveWorkout(ctx, userID, req)
+}
 func (f *mobileStoreFake) UpdateWorkout(_ context.Context, userID, workoutID int64, req apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
 	if userID != 1 || workoutID != 7 {
 		panic("wrong ownership arguments")

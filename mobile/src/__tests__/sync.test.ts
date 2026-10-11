@@ -462,3 +462,64 @@ test('auth: malformed stored session or login JSON returns typed invalid_respons
     assert.equal(secure.data.get(key), '{broken');
   }
 });
+
+test('sync: unknown-ID POST conflict preserves newer local generations durably and explicit source-ref reload resolves', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'djym-create-conflict-'));
+  const file = join(directory, 'cache.db'); let db = new DatabaseSync(file);
+  try {
+    let store = createAccountStore(adapter(db), accountKey(session));
+    const d = fixture(); store.save(d);
+    await runner(store, fake(() => { throw new Error('lost create response'); })).sync.run();
+    assert.equal(store.rows()[0].submitted, true); assert.equal(store.rows()[0].workout.remoteId, undefined);
+    store.save({ ...d, notes: 'edit after uncertain create' });
+    const gate = deferred<Response>(), started = deferred<void>(); let posts = 0;
+    const server = { ...wire(9, 'mobile', d.id), note: 'second device', updated_at: newer };
+    const { sync } = runner(store, fake((_url, init) => {
+      if (init.method === 'POST') {
+        posts++; assert.equal(JSON.parse(init.body as string).note, 'edit after uncertain create');
+        started.resolve(); return gate.promise;
+      }
+      return json({ workouts: [server], next_cursor: null });
+    }));
+    const running = sync.run(); await started.promise;
+    store.save({ ...d, notes: 'even newer local generation' });
+    const generation = store.rows()[0].generation;
+    gate.resolve(json({ error: 'conflict' }, 409)); await running; await sync.run();
+    assert.equal(posts, 1); assert.equal(store.rows().length, 1);
+    assert.equal(store.rows()[0].error, 'conflict'); assert.equal(store.rows()[0].pending, true);
+    assert.equal(store.rows()[0].generation, generation); assert.equal(store.rows()[0].workout.notes, 'even newer local generation');
+    db.close(); db = new DatabaseSync(file); store = createAccountStore(adapter(db), accountKey(session));
+    assert.equal(store.rows()[0].error, 'conflict'); assert.equal(store.rows()[0].pending, true);
+    assert.equal(store.rows()[0].workout.notes, 'even newer local generation');
+    // Exercise explicit resolution while the remote ID is still unknown, matching UUID instead.
+    const unknown = fixture(); store.save(unknown); store.submitted(unknown.id);
+    const unknownRunner = runner(store, fake((_url, init) => init.method === 'POST'
+      ? json({ error: 'conflict' }, 409) : json({ workouts: [], next_cursor: null })));
+    await unknownRunner.sync.run(); assert.equal(store.rows().find(r => r.workout.id === unknown.id)?.workout.remoteId, undefined);
+    const restored = runner(store, fake(() => json({ workouts: [server, { ...wire(10, 'mobile', unknown.id), note: 'server reload' }], next_cursor: null })));
+    await restored.sync.resolve(unknown.id);
+    const resolved = store.rows().find(r => r.workout.id === unknown.id)!;
+    assert.equal(resolved.pending, false); assert.equal(resolved.error, ''); assert.equal(resolved.workout.remoteId, 10); assert.equal(resolved.workout.notes, 'server reload');
+    await restored.sync.resolve(d.id);
+    assert.equal(store.rows().find(r => r.workout.id === d.id)?.pending, false);
+    assert.equal(store.rows().find(r => r.workout.id === d.id)?.workout.notes, 'second device');
+  } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('sync: late create ACK leaves newer generation pending through a revisioned PUT conflict', async () => {
+  const { db, connection, store } = setup();
+  try {
+    const d = fixture(); store.save(d);
+    const gate = deferred<Response>(), started = deferred<void>();
+    const { sync } = runner(store, fake((_url, init) => {
+      if (init.method === 'POST') { started.resolve(); return gate.promise; }
+      if (init.method === 'PUT') return json({ error: 'conflict' }, 409);
+      return json({ workouts: [{ ...wire(9, 'mobile', d.id), note: 'second device', updated_at: newer }], next_cursor: null });
+    }));
+    const running = sync.run(); await started.promise; store.save({ ...d, notes: 'newer local edit' });
+    gate.resolve(json({ workout_id: 9, updated_at: revision, created: true, new_exercises: [] })); await running;
+    const reopened = createAccountStore(connection, accountKey(session));
+    assert.equal(reopened.rows()[0].pending, true); assert.equal(reopened.rows()[0].error, 'conflict');
+    assert.equal(reopened.rows()[0].generation, 2); assert.equal(reopened.rows()[0].workout.notes, 'newer local edit');
+  } finally { db.close(); }
+});

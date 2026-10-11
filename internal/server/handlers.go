@@ -34,6 +34,7 @@ type handlerStore interface {
 	ResolveIdentity(context.Context, string, string) (int64, error)
 	ConfirmLogin(context.Context, string, int64) error
 	DeleteSession(context.Context, string) error
+	CreateWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
 	SaveWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
 	UpdateWorkout(context.Context, int64, int64, apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
 	DeleteWorkout(context.Context, int64, int64, time.Time) error
@@ -103,7 +104,13 @@ func (h *handlers) saveWorkout(c *gin.Context) {
 		return
 	}
 
-	resp, err := h.store.SaveWorkout(c.Request.Context(), userID, req)
+	var resp apiclient.SaveWorkoutResponse
+	var err error
+	if currentPrincipal(c).service {
+		resp, err = h.store.SaveWorkout(c.Request.Context(), userID, req)
+	} else {
+		resp, err = h.store.CreateWorkout(c.Request.Context(), userID, req)
+	}
 	if err != nil {
 		respondWithError(c, err)
 		return

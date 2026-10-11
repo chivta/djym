@@ -17,13 +17,13 @@ import (
 var selectAliasTarget = `SELECT exercise_id FROM exercise_aliases WHERE user_id = $1 AND alias_key = ` + norm("$2::text")
 
 const (
+	insertWorkout = `INSERT INTO workouts (user_id, performed_on, workout_type, kcal, protein_g, note, raw_text, source, source_ref, started_at, finished_at)
+		VALUES ($1, $2::text::date, NULLIF($3::text, ''), $4, $5, NULLIF($6::text, ''), $7, $8, $9, $10, $11)`
 	// upsertWorkout keeps the workout id on conflict and bumps updated_at.
 	// Wall-clock time plus a microsecond floor keeps revisions distinct even when
 	// concurrent transactions start before waiting for the row lock.
 	// xmax = 0 is true only for a freshly inserted row.
-	upsertWorkout = `INSERT INTO workouts (user_id, performed_on, workout_type, kcal, protein_g, note, raw_text, source, source_ref, started_at, finished_at)
-		VALUES ($1, $2::text::date, NULLIF($3::text, ''), $4, $5, NULLIF($6::text, ''), $7, $8, $9, $10, $11)
-		ON CONFLICT (user_id, source, source_ref) DO UPDATE SET
+	upsertWorkout = insertWorkout + ` ON CONFLICT (user_id, source, source_ref) DO UPDATE SET
 			performed_on = EXCLUDED.performed_on,
 			workout_type = EXCLUDED.workout_type,
 			kcal         = EXCLUDED.kcal,
