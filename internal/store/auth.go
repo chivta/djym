@@ -37,14 +37,14 @@ const (
 )
 
 // LoginRequest is a new sign-in request. Token goes to the identity provider
-// (the bot deep link), Nonce stays with the browser; only their hashes are stored.
+// (the bot deep link), Nonce stays with the requesting client; only their hashes are stored.
 type LoginRequest struct {
 	Token     string
 	Nonce     string
 	ExpiresAt time.Time
 }
 
-// Session is a new browser session. Token is the cookie value; only its hash is stored.
+// Session is a new user session. Token is a cookie or native bearer value; only its hash is stored.
 type Session struct {
 	Token     string
 	UserID    int64
@@ -106,7 +106,7 @@ func (s *Store) ConfirmLogin(ctx context.Context, loginToken string, userID int6
 	return apperr.ErrLoginInvalid
 }
 
-// ClaimLogin is the browser's poll for the request bound to nonce. While it
+// ClaimLogin is the client's poll for the request bound to nonce. While it
 // awaits confirmation it returns (nil, nil). Once confirmed it marks the request
 // consumed and returns a new session valid for sessionTTL, in one transaction.
 // An unknown, expired or already consumed request fails with apperr.ErrLoginExpired.

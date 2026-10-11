@@ -54,3 +54,43 @@ func TestSaveWorkoutValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateWorkoutValidation(t *testing.T) {
+	v, err := newValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	neg := -1
+	started := revision
+	finished := started.Add(time.Hour)
+	tests := []struct {
+		name   string
+		mutate func(*apiclient.UpdateWorkoutRequest)
+		ok     bool
+	}{
+		{"empty historical entries", func(r *apiclient.UpdateWorkoutRequest) { r.Entries = nil }, true},
+		{"empty historical sets", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Sets = nil }, true},
+		{"maximum decimal", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Sets[0].Weight = "9999.99" }, true},
+		{"too much weight", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Sets[0].Weight = "10000" }, false},
+		{"three decimals", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Sets[0].Weight = "1.001" }, false},
+		{"zero reps", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Sets[0].Reps = 0 }, false},
+		{"unknown type", func(r *apiclient.UpdateWorkoutRequest) { r.Type = "cardio" }, false},
+		{"negative intake", func(r *apiclient.UpdateWorkoutRequest) { r.ProteinG = &neg }, false},
+		{"blank exercise", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Name = "" }, false},
+		{"missing revision", func(r *apiclient.UpdateWorkoutRequest) { r.ExpectedUpdatedAt = time.Time{} }, false},
+		{"times together", func(r *apiclient.UpdateWorkoutRequest) { r.StartedAt, r.FinishedAt = &started, &finished }, true},
+		{"only started", func(r *apiclient.UpdateWorkoutRequest) { r.StartedAt = &started }, false},
+		{"finished before started", func(r *apiclient.UpdateWorkoutRequest) { r.StartedAt, r.FinishedAt = &finished, &started }, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := apiclient.UpdateWorkoutRequest{PerformedOn: "2026-10-03", RawText: "x", ExpectedUpdatedAt: revision,
+				Entries: []apiclient.Entry{{Name: "Squat", Sets: []apiclient.Set{{Weight: "0", Reps: 1}}}}}
+			tt.mutate(&req)
+			err := v.Struct(req)
+			if (err == nil) != tt.ok {
+				t.Fatalf("ok=%v err=%v", tt.ok, err)
+			}
+		})
+	}
+}

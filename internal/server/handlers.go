@@ -1,8 +1,12 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -12,15 +16,30 @@ import (
 	"gymbro/internal/store"
 )
 
-// handlers holds the HTTP handlers. They know nothing about authorization: the
-// route groups they are mounted on carry the guards (see auth.go).
+// handlers holds the HTTP handlers. Route-group guards enforce authorization;
+// saveWorkout also restricts source identity for user creates (see auth.go).
 type handlers struct {
-	store    *store.Store
+	store    handlerStore
 	validate *validator.Validate
 	// botUsername builds the sign-in deep link, without the @.
 	botUsername string
 	// cookieSecure sets the Secure attribute on auth cookies (false only for local HTTP).
 	cookieSecure bool
+}
+
+// handlerStore is the HTTP consumer boundary; Store implements it directly.
+type handlerStore interface {
+	CreateLoginRequest(context.Context, time.Duration) (store.LoginRequest, error)
+	ClaimLogin(context.Context, string, time.Duration) (*store.Session, error)
+	ResolveIdentity(context.Context, string, string) (int64, error)
+	ConfirmLogin(context.Context, string, int64) error
+	DeleteSession(context.Context, string) error
+	SaveWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
+	UpdateWorkout(context.Context, int64, int64, apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
+	DeleteWorkout(context.Context, int64, int64, time.Time) error
+	ListWorkouts(context.Context, int64, int, string) (apiclient.ListWorkoutsResponse, error)
+	ListExercises(context.Context, int64) ([]apiclient.Exercise, error)
+	ReplaceExercise(context.Context, int64, string, string) (apiclient.ReplaceExerciseResponse, error)
 }
 
 type userURI struct {
@@ -38,7 +57,10 @@ type listWorkoutsQuery struct {
 // admits the bot or a session of the :id user.
 func (h *handlers) register(service, userAccess *gin.RouterGroup) {
 	service.POST("/identities/resolve", h.resolveIdentity)
-	service.POST("/users/:id/workouts", h.saveWorkout)
+	writes := userAccess.Group("", requireWorkoutWrite())
+	writes.POST("/users/:id/workouts", h.saveWorkout)
+	writes.PUT("/users/:id/workouts/:workout_id", h.updateWorkout)
+	writes.DELETE("/users/:id/workouts/:workout_id", h.deleteWorkout)
 	service.GET("/users/:id/exercises", h.listExercises)
 	service.POST("/users/:id/exercises/replace", h.replaceExercise)
 	service.POST("/auth/telegram/confirm", h.confirmTelegram)
@@ -73,6 +95,11 @@ func (h *handlers) saveWorkout(c *gin.Context) {
 		req.Entries[i].Name = trimName(req.Entries[i].Name)
 	}
 	if !h.valid(c, req) {
+		return
+	}
+
+	if !currentPrincipal(c).service && (req.Source != "mobile" || h.validate.Var(req.SourceRef, "uuid") != nil) {
+		respondWithError(c, apperr.ErrInvalidRequest)
 		return
 	}
 
@@ -182,4 +209,75 @@ func (h *handlers) valid(c *gin.Context, req any) bool {
 		return false
 	}
 	return true
+}
+
+type workoutURI struct {
+	ID        int64 `uri:"id" validate:"required,gt=0"`
+	WorkoutID int64 `uri:"workout_id" validate:"required,gt=0"`
+}
+
+func (h *handlers) bindWorkout(c *gin.Context) (workoutURI, bool) {
+	var uri workoutURI
+	err := c.ShouldBindUri(&uri)
+	if err != nil {
+		respondWithError(c, apperr.ErrInvalidRequest)
+		return uri, false
+	}
+	return uri, h.valid(c, uri)
+}
+
+func (h *handlers) updateWorkout(c *gin.Context) {
+	uri, ok := h.bindWorkout(c)
+	if !ok {
+		return
+	}
+	var req apiclient.UpdateWorkoutRequest
+	if !h.bindStrictJSON(c, &req) {
+		return
+	}
+	for i := range req.Entries {
+		req.Entries[i].Name = trimName(req.Entries[i].Name)
+	}
+	if !h.valid(c, req) {
+		return
+	}
+	resp, err := h.store.UpdateWorkout(c.Request.Context(), uri.ID, uri.WorkoutID, req)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *handlers) deleteWorkout(c *gin.Context) {
+	uri, ok := h.bindWorkout(c)
+	if !ok {
+		return
+	}
+	var req apiclient.DeleteWorkoutRequest
+	if !h.bindStrictJSON(c, &req) || !h.valid(c, req) {
+		return
+	}
+	err := h.store.DeleteWorkout(c.Request.Context(), uri.ID, uri.WorkoutID, req.ExpectedUpdatedAt)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+// New revision endpoints reject unknown fields, especially source identity edits.
+func (h *handlers) bindStrictJSON(c *gin.Context, req any) bool {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(req)
+	if err == nil {
+		var extra any
+		err = decoder.Decode(&extra)
+		if err == io.EOF {
+			return true
+		}
+	}
+	respondWithError(c, apperr.ErrInvalidRequest)
+	return false
 }

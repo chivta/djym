@@ -32,10 +32,12 @@ const (
 // the service-only /v1 group).
 
 // registerAuth mounts the /auth routes: public needs no principal, session
-// needs a session cookie.
+// needs a user session.
 func (h *handlers) registerAuth(public, session *gin.RouterGroup) {
 	public.POST("/telegram/login", h.startLogin)
 	public.POST("/telegram/poll", h.pollLogin)
+	public.POST("/telegram/mobile/login", h.startMobileLogin)
+	public.POST("/telegram/mobile/poll", h.pollMobileLogin)
 	session.GET("/me", h.me)
 	session.POST("/logout", h.logout)
 }
@@ -102,14 +104,17 @@ func (h *handlers) me(c *gin.Context) {
 }
 
 func (h *handlers) logout(c *gin.Context) {
-	// requireSession guarantees the cookie is present.
-	tok, _ := c.Cookie(sessionCookie)
+	// Revoke the session used by authentication, never an unrelated cookie.
+	p := currentPrincipal(c)
+	tok := p.sessionToken
 	err := h.store.DeleteSession(c.Request.Context(), tok)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
-	h.clearCookie(c, sessionCookie)
+	if !p.bearer {
+		h.clearCookie(c, sessionCookie)
+	}
 	c.Status(http.StatusNoContent)
 }
 
@@ -136,4 +141,32 @@ func (h *handlers) clearCookie(c *gin.Context, name string) {
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func (h *handlers) startMobileLogin(c *gin.Context) {
+	req, err := h.store.CreateLoginRequest(c.Request.Context(), loginTTL)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	link := telegramLinkBase + h.botUsername + "?" + url.Values{startParam: {req.Token}}.Encode()
+	c.JSON(http.StatusOK, apiclient.StartMobileLoginResponse{BotURL: link, ExpiresAt: req.ExpiresAt, Nonce: req.Nonce})
+}
+
+func (h *handlers) pollMobileLogin(c *gin.Context) {
+	var req apiclient.PollMobileLoginRequest
+	if !h.bindJSON(c, &req) || !h.valid(c, req) {
+		return
+	}
+	session, err := h.store.ClaimLogin(c.Request.Context(), req.Nonce, sessionTTL)
+	if err != nil {
+		respondWithError(c, err)
+		return
+	}
+	if session == nil {
+		c.JSON(http.StatusOK, apiclient.PollMobileLoginResponse{Status: apiclient.LoginPending})
+		return
+	}
+	expiry := session.ExpiresAt.UTC()
+	c.JSON(http.StatusOK, apiclient.PollMobileLoginResponse{Status: apiclient.LoginConfirmed, UserID: session.UserID, SessionToken: session.Token, ExpiresAt: &expiry})
 }

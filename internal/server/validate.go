@@ -33,13 +33,19 @@ func newValidator() (*validator.Validate, error) {
 		return nil, fmt.Errorf("register workout_type: %w", err)
 	}
 
-	v.RegisterStructValidation(validateTimes, apiclient.SaveWorkoutRequest{})
+	v.RegisterStructValidation(validateTimes, apiclient.SaveWorkoutRequest{}, apiclient.UpdateWorkoutRequest{})
 	return v, nil
 }
 
 // validateTimes: started_at and finished_at come together, finished not before started.
 func validateTimes(sl validator.StructLevel) {
-	req := sl.Current().Interface().(apiclient.SaveWorkoutRequest)
+	var req apiclient.SaveWorkoutRequest
+	switch r := sl.Current().Interface().(type) {
+	case apiclient.SaveWorkoutRequest:
+		req = r
+	case apiclient.UpdateWorkoutRequest:
+		req.StartedAt, req.FinishedAt = r.StartedAt, r.FinishedAt
+	}
 	if (req.StartedAt == nil) != (req.FinishedAt == nil) {
 		sl.ReportError(req.FinishedAt, "FinishedAt", "finished_at", "times_together", "")
 		return

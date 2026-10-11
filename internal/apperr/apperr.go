@@ -22,11 +22,12 @@ var (
 	ErrForbidden        = &AppError{Status: http.StatusForbidden, Code: apiclient.CodeForbidden}
 	ErrLoginInvalid     = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeLoginInvalid}
 	ErrLoginExpired     = &AppError{Status: http.StatusGone, Code: apiclient.CodeLoginExpired}
+	ErrWorkoutNotFound  = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeWorkoutNotFound}
 	ErrUserNotFound     = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeUserNotFound}
 	ErrSameExercise     = &AppError{Status: http.StatusUnprocessableEntity, Code: apiclient.CodeSameExercise}
 	ErrExerciseNotFound = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeExerciseNotFound}
 	ErrBadNameIsAlias   = &AppError{Status: http.StatusConflict, Code: apiclient.CodeBadNameIsAlias}
-	// ErrConflict is an unexpected uniqueness/FK clash, typically a concurrent write; retrying may succeed.
+	// ErrConflict is a revision mismatch or uniqueness/FK clash from a concurrent write.
 	ErrConflict = &AppError{Status: http.StatusConflict, Code: apiclient.CodeConflict}
 	ErrInternal = &AppError{Status: http.StatusInternalServerError, Code: apiclient.CodeInternal}
 )

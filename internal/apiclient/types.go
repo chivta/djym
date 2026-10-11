@@ -9,6 +9,7 @@ const (
 	CodeInvalidRequest   = "invalid_request"
 	CodeUnauthorized     = "unauthorized"
 	CodeUserNotFound     = "user_not_found"
+	CodeWorkoutNotFound  = "workout_not_found"
 	CodeSameExercise     = "same_exercise"
 	CodeExerciseNotFound = "exercise_not_found"
 	CodeBadNameIsAlias   = "bad_name_is_alias"
@@ -54,6 +55,24 @@ type SaveWorkoutRequest struct {
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
+// UpdateWorkoutRequest replaces content without changing source identity.
+type UpdateWorkoutRequest struct {
+	PerformedOn       string     `json:"performed_on"       validate:"required,datetime=2006-01-02"`
+	Type              string     `json:"type,omitempty"     validate:"omitempty,workout_type"`
+	Kcal              *int       `json:"kcal,omitempty"     validate:"omitempty,gte=0"`
+	ProteinG          *int       `json:"protein_g,omitempty" validate:"omitempty,gte=0"`
+	Note              string     `json:"note,omitempty"`
+	RawText           string     `json:"raw_text"           validate:"required"`
+	Entries           []Entry    `json:"entries"            validate:"dive"`
+	StartedAt         *time.Time `json:"started_at,omitempty"`
+	FinishedAt        *time.Time `json:"finished_at,omitempty"`
+	ExpectedUpdatedAt time.Time  `json:"expected_updated_at" validate:"required"`
+}
+
+type DeleteWorkoutRequest struct {
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at" validate:"required"`
+}
+
 // Entry is one exercise line; its position is its index in the list. Sets may be empty.
 type Entry struct {
 	Name string `json:"name" validate:"required"`
@@ -70,9 +89,10 @@ type Set struct {
 // SaveWorkoutResponse reports the upsert result. NewExercises lists the exercise
 // names created by this save (deduplicated), so typos can be fixed right away.
 type SaveWorkoutResponse struct {
-	WorkoutID    int64    `json:"workout_id"`
-	Created      bool     `json:"created"`
-	NewExercises []string `json:"new_exercises"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	WorkoutID    int64     `json:"workout_id"`
+	Created      bool      `json:"created"`
+	NewExercises []string  `json:"new_exercises"`
 }
 
 type Exercise struct {
@@ -99,7 +119,7 @@ type ReplaceExerciseResponse struct {
 
 // Workout is one stored workout as returned by the list endpoint. Absent optional
 // fields are null. PerformedOn is an ISO date; StartedAt and FinishedAt are UTC.
-// raw_text is not exposed.
+// UpdatedAt is the UTC revision at database precision.
 type Workout struct {
 	ID          int64          `json:"id"`
 	PerformedOn string         `json:"performed_on"`
@@ -110,6 +130,9 @@ type Workout struct {
 	StartedAt   *time.Time     `json:"started_at"`
 	FinishedAt  *time.Time     `json:"finished_at"`
 	Source      string         `json:"source"`
+	SourceRef   string         `json:"source_ref"`
+	RawText     string         `json:"raw_text"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 	Entries     []WorkoutEntry `json:"entries"`
 }
 
@@ -157,4 +180,22 @@ type PollLoginResponse struct {
 
 type MeResponse struct {
 	UserID int64 `json:"user_id"`
+}
+
+// Mobile login uses an explicit client nonce and never sets a cookie.
+type StartMobileLoginResponse struct {
+	BotURL    string    `json:"bot_url"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Nonce     string    `json:"nonce"`
+}
+
+type PollMobileLoginRequest struct {
+	Nonce string `json:"nonce" validate:"required,len=43"`
+}
+
+type PollMobileLoginResponse struct {
+	Status       string     `json:"status"`
+	UserID       int64      `json:"user_id,omitempty"`
+	SessionToken string     `json:"session_token,omitempty"`
+	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
 }
