@@ -15,8 +15,8 @@ resources:
 - ingress.yaml
 images:
 - name: ghcr.io/chivta/gymbro/api
-  newTag: 057c17b2f535b2df9fc02d35c69906444b2a2684
+  newTag: 9799a5bf674fd0b77b7fcda64204bdf14781ad4b
 - name: ghcr.io/chivta/gymbro/bot
-  newTag: 057c17b2f535b2df9fc02d35c69906444b2a2684
+  newTag: 9799a5bf674fd0b77b7fcda64204bdf14781ad4b
 - name: ghcr.io/chivta/gymbro/web
   newTag: 28a4af60cc531b7c9515f02606d882a7e2b6b511
