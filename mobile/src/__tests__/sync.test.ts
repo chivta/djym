@@ -506,6 +506,59 @@ test('sync: unknown-ID POST conflict preserves newer local generations durably a
   } finally { db.close(); rmSync(directory, { recursive: true, force: true }); }
 });
 
+for (const action of ['save', 'delete']) for (const timing of ['during', 'after']) test(`sync: ${action} ${timing} matching history cannot accept an unknown-ID conflict revision`, async () => {
+  const { db, connection, store } = setup();
+  try {
+    const d = fixture(); store.save(d);
+    const server = { ...wire(9, 'mobile', d.id), note: 'second device', updated_at: newer };
+    const history = deferred<Response>(), started = deferred<void>();
+    const mutations: string[] = []; let histories = 0;
+    const { sync } = runner(store, fake((_url, init) => {
+      if (init.method !== 'GET') {
+        mutations.push(init.method!);
+        if (mutations.length === 1) return json({ error: 'conflict' }, 409);
+        return init.method === 'DELETE' ? json(null, 204)
+          : json({ workout_id: 9, updated_at: newer, created: false, new_exercises: [] });
+      }
+      if (++histories === 1) { started.resolve(); return history.promise; }
+      return json({ workouts: [server], next_cursor: null });
+    }));
+    const running = sync.run(); await started.promise;
+    assert.equal(store.rows()[0].error, 'conflict');
+    if (timing === 'after') { history.resolve(json({ workouts: [server], next_cursor: null })); await running; }
+    if (action === 'save') store.save({ ...toDraft(store.load().workouts[0]), notes: 'ordinary local save' });
+    else store.remove(d.id);
+    if (timing === 'during') { history.resolve(json({ workouts: [server], next_cursor: null })); await running; }
+    await sync.run();
+    const persisted = createAccountStore(connection, accountKey(session)).rows()[0];
+    assert.ok(persisted);
+    assert.equal(persisted.error, 'conflict'); assert.equal(persisted.pending, true);
+    assert.equal(persisted.workout.remoteId, undefined); assert.equal(persisted.workout.revision, undefined);
+    assert.equal(persisted.deleted, action === 'delete');
+    if (action === 'save') assert.equal(persisted.workout.notes, 'ordinary local save');
+    assert.deepEqual(mutations, ['POST']);
+    await sync.resolve(d.id);
+    const resolved = store.rows()[0];
+    assert.equal(resolved.error, ''); assert.equal(resolved.pending, false); assert.equal(resolved.deleted, false);
+    assert.equal(resolved.workout.remoteId, 9); assert.equal(resolved.workout.revision, newer);
+    assert.equal(resolved.workout.notes, 'second device');
+  } finally { db.close(); }
+});
+
+for (const error of ['conflict', 'workout_not_found']) test(`storage: ordinary saves and deletes keep ${error} until explicit resolution`, () => {
+  const { db, store } = setup();
+  try {
+    store.merge([remoteWorkout(wire())]); const w = store.load().workouts[0];
+    store.save({ ...toDraft(w), notes: 'local' }); store.failure(store.rows()[0], error);
+    store.save({ ...toDraft(w), notes: 'newer local' });
+    assert.equal(store.rows()[0].error, error); assert.equal(store.rows()[0].workout.notes, 'newer local');
+    store.remove(w.id);
+    store.merge([{ ...remoteWorkout(wire()), revision: newer, notes: 'second device' }]);
+    assert.equal(store.rows()[0].error, error); assert.equal(store.rows()[0].deleted, true);
+    assert.equal(store.rows()[0].workout.revision, revision);
+  } finally { db.close(); }
+});
+
 test('sync: late create ACK leaves newer generation pending through a revisioned PUT conflict', async () => {
   const { db, connection, store } = setup();
   try {

@@ -29,7 +29,8 @@ export function createAccountStore(db: Database, account: string) {
     const workout = toWorkout({ ...draft, ...(current ? {
       remoteId: current.workout.remoteId, revision: current.workout.revision, source: current.workout.source, sourceRef: current.workout.sourceRef,
     } : {}), source: current?.workout.source ?? 'mobile', sourceRef: current?.workout.sourceRef ?? draft.id });
-    put({ workout, generation: (current?.generation ?? 0) + 1, pending: true, deleted: false, submitted: current?.submitted ?? false, error: '' });
+    // A local save does not accept a conflicting server revision.
+    put({ workout, generation: (current?.generation ?? 0) + 1, pending: true, deleted: false, submitted: current?.submitted ?? false, error: current?.error ?? '' });
     return workout;
   }
   return {
@@ -49,7 +50,7 @@ export function createAccountStore(db: Database, account: string) {
         const r = rows().find(r => r.workout.id === id);
         if (r) {
           if (!r.workout.remoteId && !r.submitted) erase(id);
-          else put({ ...r, generation: r.generation + 1, pending: true, deleted: true, error: '' });
+          else put({ ...r, generation: r.generation + 1, pending: true, deleted: true });
         }
         clearDraft();
       });
@@ -79,7 +80,7 @@ export function createAccountStore(db: Database, account: string) {
         for (const w of workouts) {
           const r = rows().find(r => r.workout.remoteId === w.remoteId || (w.source === 'mobile' && r.workout.sourceRef === w.sourceRef));
           if (r?.pending) {
-            if (!r.workout.remoteId) put({ ...r, workout: { ...r.workout, remoteId: w.remoteId, revision: w.revision } });
+            if (!r.workout.remoteId && !r.error) put({ ...r, workout: { ...r.workout, remoteId: w.remoteId, revision: w.revision } });
           } else if (r?.workout.id !== draftId) put({ workout: { ...w, id: r?.workout.id ?? w.id }, generation: r?.generation ?? 0, pending: false, deleted: false, submitted: true, error: '' });
         }
         // A successful full snapshot can remove remote deletions, never local pending writes.
