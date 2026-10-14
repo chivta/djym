@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { existingSelection, exercisePreview, invalidExerciseId, toggleExercise } from './exerciseList';
 import { randomUUID } from 'expo-crypto';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { MAX_TEXT_LENGTH, WORKOUT_TYPES } from './model';
@@ -11,7 +13,7 @@ const REPS_INPUT_LENGTH = 4;
 const DATE_INPUT_LENGTH = 10;
 const EMPTY_WEIGHT = '0';
 
-export function Editor({ draft, onChange, onBack, onSave, onDiscard, onDelete, status, error }: {
+type EditorProps = {
   draft: Draft;
   onChange: (draft: Draft) => void;
   onBack: () => void;
@@ -20,7 +22,20 @@ export function Editor({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
   onDelete?: () => void;
   status: React.ReactNode;
   error: string | null;
-}) {
+};
+
+export function Editor(props: EditorProps) {
+  return <EditorSession key={props.draft.id} {...props} />;
+}
+
+function EditorSession({ draft, onChange, onBack, onSave, onDiscard, onDelete, status, error }: EditorProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selection = existingSelection(selectedId, draft.exercises);
+  function save() {
+    const invalidId = invalidExerciseId(draft);
+    if (invalidId) setSelectedId(invalidId);
+    onSave();
+  }
   function updateExercise(id: string, update: Partial<DraftExercise>) {
     onChange({ ...draft, exercises: draft.exercises.map(entry => entry.id === id ? { ...entry, ...update } : entry) });
   }
@@ -28,8 +43,10 @@ export function Editor({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
     updateExercise(entry.id, { sets: entry.sets.map(set => set.id === id ? { ...set, ...update } : set) });
   }
   function addExercise() {
+    const id = randomUUID();
+    setSelectedId(id);
     onChange({ ...draft, exercises: [...draft.exercises, {
-      id: randomUUID(), name: '', sets: [{ id: randomUUID(), kg: EMPTY_WEIGHT, reps: '' }],
+      id, name: '', sets: [{ id: randomUUID(), kg: EMPTY_WEIGHT, reps: '' }],
     }] });
   }
   return <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -56,41 +73,64 @@ export function Editor({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
         <Text style={styles.heading}>{t.exercises}</Text>
         <Text style={styles.muted}>{t.weightHint}</Text>
       </View>
-      {draft.exercises.map((entry, exerciseIndex) => <Card key={entry.id}>
-        <View style={styles.between}>
-          <Text style={styles.eyebrow}>{t.exerciseNumber(exerciseIndex)}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={t.removeExercise(exerciseIndex)} style={styles.removeButton}
-            onPress={() => onChange({ ...draft, exercises: draft.exercises.filter(exercise => exercise.id !== entry.id) })}>
-            <Text style={styles.removeText}>{t.removeGlyph}</Text>
-          </Pressable>
-        </View>
-        <TextInput style={styles.input} value={entry.name} onChangeText={name => updateExercise(entry.id, { name })}
-          placeholder={t.exercisePlaceholder} placeholderTextColor={colors.muted} accessibilityLabel={t.exerciseLabel(exerciseIndex)} maxLength={MAX_TEXT_LENGTH} />
-        <View style={styles.row}>
-          <Text style={styles.setNumber}>{t.set}</Text>
-          <Text style={styles.setLabel}>{t.kg}</Text>
-          <Text style={styles.setLabel}>{t.reps}</Text>
-          <View style={{ width: TOUCH_TARGET }} />
-        </View>
-        {entry.sets.map((set, setIndex) => <View key={set.id} style={styles.row}>
-          <Text style={styles.setNumber}>{t.position(setIndex)}</Text>
-          <TextInput style={[styles.input, styles.setInput]} value={set.kg} onChangeText={kg => updateSet(entry, set.id, { kg })}
-            keyboardType="decimal-pad" accessibilityLabel={t.kgLabel(exerciseIndex, setIndex)} maxLength={WEIGHT_INPUT_LENGTH} selectTextOnFocus />
-          <TextInput style={[styles.input, styles.setInput]} value={set.reps} onChangeText={reps => updateSet(entry, set.id, { reps })}
-            keyboardType="number-pad" accessibilityLabel={t.repsLabel(exerciseIndex, setIndex)} maxLength={REPS_INPUT_LENGTH} selectTextOnFocus />
-          <Pressable style={styles.removeButton} accessibilityRole="button" accessibilityLabel={t.removeSet(exerciseIndex, setIndex)}
-            onPress={() => updateExercise(entry.id, { sets: entry.sets.filter(value => value.id !== set.id) })}>
-            <Text style={styles.removeText}>{t.removeGlyph}</Text>
-          </Pressable>
-        </View>)}
-        <Button label={t.addSet} secondary onPress={() => {
-          const last = entry.sets[entry.sets.length - 1];
-          updateExercise(entry.id, { sets: [...entry.sets, { id: randomUUID(), kg: last?.kg ?? EMPTY_WEIGHT, reps: last?.reps ?? '' }] });
-        }} />
-      </Card>)}
-      <Button label={t.addExercise} secondary onPress={addExercise} />
+      <View style={styles.exerciseList}>
+        {draft.exercises.map((entry, exerciseIndex) => {
+          const expanded = selection === entry.id;
+          const name = entry.name.trim() || t.unnamedExercise(exerciseIndex);
+          const preview = exercisePreview(entry.sets, !!draft.remoteId);
+          return <View key={entry.id} style={styles.exerciseRow}>
+            <Pressable accessibilityRole="button" accessibilityLabel={t.exerciseRowLabel(exerciseIndex, name, preview)}
+              accessibilityState={{ expanded }} style={({ pressed }) => [styles.exerciseHeader, pressed && styles.pressed]}
+              onPress={() => setSelectedId(toggleExercise(selection, entry.id))}>
+              <Text style={styles.exerciseName} numberOfLines={2}>{name}</Text>
+              <Text style={styles.exercisePreview} numberOfLines={2}>{preview}</Text>
+              <Text style={styles.exerciseIndicator}>{expanded ? t.collapseExerciseGlyph : t.expandExerciseGlyph}</Text>
+            </Pressable>
+            {expanded && <View style={styles.exerciseDetails}>
+              <View style={styles.between}>
+                <Text style={styles.eyebrow}>{t.exerciseNumber(exerciseIndex)}</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel={t.removeExercise(exerciseIndex)} style={styles.removeButton}
+                  onPress={() => {
+                    setSelectedId(null);
+                    onChange({ ...draft, exercises: draft.exercises.filter(exercise => exercise.id !== entry.id) });
+                  }}>
+                  <Text style={styles.removeText}>{t.removeGlyph}</Text>
+                </Pressable>
+              </View>
+              <TextInput style={styles.input} value={entry.name} onChangeText={name => updateExercise(entry.id, { name })}
+                placeholder={t.exercisePlaceholder} placeholderTextColor={colors.muted} accessibilityLabel={t.exerciseLabel(exerciseIndex)} maxLength={MAX_TEXT_LENGTH} />
+              <View style={styles.row}>
+                <Text style={styles.setNumber}>{t.set}</Text>
+                <Text style={styles.setLabel}>{t.kg}</Text>
+                <Text style={styles.setLabel}>{t.reps}</Text>
+                <View style={{ width: TOUCH_TARGET }} />
+              </View>
+              {entry.sets.map((set, setIndex) => <View key={set.id} style={styles.row}>
+                <Text style={styles.setNumber}>{t.position(setIndex)}</Text>
+                <TextInput style={[styles.input, styles.setInput]} value={set.kg} onChangeText={kg => updateSet(entry, set.id, { kg })}
+                  keyboardType="decimal-pad" accessibilityLabel={t.kgLabel(exerciseIndex, setIndex)} maxLength={WEIGHT_INPUT_LENGTH} selectTextOnFocus />
+                <TextInput style={[styles.input, styles.setInput]} value={set.reps} onChangeText={reps => updateSet(entry, set.id, { reps })}
+                  keyboardType="number-pad" accessibilityLabel={t.repsLabel(exerciseIndex, setIndex)} maxLength={REPS_INPUT_LENGTH} selectTextOnFocus />
+                <Pressable style={styles.removeButton} accessibilityRole="button" accessibilityLabel={t.removeSet(exerciseIndex, setIndex)}
+                  onPress={() => updateExercise(entry.id, { sets: entry.sets.filter(value => value.id !== set.id) })}>
+                  <Text style={styles.removeText}>{t.removeGlyph}</Text>
+                </Pressable>
+              </View>)}
+              <Button label={t.addSet} secondary onPress={() => {
+                const last = entry.sets[entry.sets.length - 1];
+                updateExercise(entry.id, { sets: [...entry.sets, { id: randomUUID(), kg: last?.kg ?? EMPTY_WEIGHT, reps: last?.reps ?? '' }] });
+              }} />
+            </View>}
+          </View>;
+        })}
+        <Pressable accessibilityRole="button" accessibilityLabel={t.addExercise} onPress={addExercise}
+          style={({ pressed }) => [styles.exerciseHeader, pressed && styles.pressed]}>
+          <Text style={[styles.text, styles.flex]}>{t.addExercise}</Text>
+          <Text style={styles.exerciseIndicator}>{t.addExerciseGlyph}</Text>
+        </Pressable>
+      </View>
       {error && <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="polite">{error}</Text>}
-      <Button label={t.save} onPress={onSave} />
+      <Button label={t.save} onPress={save} />
       <Button label={t.discard} onPress={onDiscard} secondary />
       {onDelete && <Button label={t.delete} onPress={onDelete} secondary danger />}
     </ScrollView>
