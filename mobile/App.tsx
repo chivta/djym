@@ -6,6 +6,9 @@ import { openDatabaseSync } from 'expo-sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { Alert, AppState, BackHandler, FlatList, Linking, Pressable, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { Programs } from './src/Programs';
+import { createProgramStore } from './src/programStore';
+import type { ProgramStore } from './src/programStore';
 import { Editor } from './src/Editor';
 import { t, validationText } from './src/i18n';
 import { newDraft, setCount, toDraft, validateDraft } from './src/model';
@@ -23,6 +26,8 @@ import { Button, Card } from './src/ui';
 function WorkoutLog({ base }: { base: string }) {
   const database = useRef<SQLiteDatabase | null>(null);
   const store = useRef<AccountStore | null>(null);
+  const programStore = useRef<ProgramStore | null>(null);
+  const [programMenu, setProgramMenu] = useState(false);
   const api = useRef(createApi(base)).current;
   const auth = useRef(createAuth(base, api, {
     get: SecureStore.getItemAsync, set: SecureStore.setItemAsync, remove: SecureStore.deleteItemAsync,
@@ -52,13 +57,14 @@ function WorkoutLog({ base }: { base: string }) {
   }
   function activate(next: Session | null) {
     sync.activate(null);
-    setEditing(false); setError(null); setSyncError(null); setDraftSaved(true);
+    setProgramMenu(false); setEditing(false); setError(null); setSyncError(null); setDraftSaved(true);
     setSession(next); setWorkouts([]); setRows([]); setDraft(null);
-    if (!next) { store.current = null; return; }
+    if (!next) { store.current = null; programStore.current = null; return; }
     const scoped = createAccountStore(database.current!, accountKey(next));
     store.current = scoped;
+    programStore.current = createProgramStore(database.current!, accountKey(next));
     const data = scoped.load(); setDraft(data.draft); reload();
-    sync.activate({ session: next, store: scoped, api });
+    sync.activate({ session: next, store: scoped, api, programs: programStore.current });
     void sync.run();
   }
   async function load() {
@@ -76,10 +82,10 @@ function WorkoutLog({ base }: { base: string }) {
     return () => { alive.current = false; sync.activate(null); database.current?.closeSync(); database.current = null; };
   }, []);
   useEffect(() => {
-    if (!editing) return;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => { setEditing(false); setError(null); return true; });
+    if (!editing && !programMenu) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => { setProgramMenu(false); setEditing(false); setError(null); return true; });
     return () => subscription.remove();
-  }, [editing]);
+  }, [editing, programMenu]);
   useEffect(() => {
     let disposed = false;
     async function foreground() {
@@ -191,7 +197,11 @@ function WorkoutLog({ base }: { base: string }) {
     {phase === 'failed' && <Button label={t.retry} onPress={() => { void load(); }} />}
   </View>;
   if (!session) return <View style={styles.content}><Text style={styles.heading}>{t.appTitle}</Text><Text style={styles.muted}>{t.signedOut}</Text>{authControls}</View>;
-  if (editing && draft) return <Editor draft={draft} onChange={change} onSave={save} onDiscard={discard}
+  if (programMenu && programStore.current) return <View style={styles.flex}>
+    {syncError && <Text style={styles.error}>{t.errors[syncError]}</Text>}
+    <Programs key={accountKey(session)} store={programStore.current} onBack={() => setProgramMenu(false)} onMutation={() => { reload(); void sync.run(); }} onResolve={sync.resolveProgram} />
+  </View>;
+  if (editing && draft) return <Editor draft={draft} history={workouts} programs={programStore.current?.load() ?? []} onChange={change} onSave={save} onDiscard={discard}
     onDelete={workouts.some(w => w.id === draft.id) ? remove : undefined} error={error} status={draftStatus}
     onBack={() => { setEditing(false); setError(null); }} />;
   return <FlatList data={workouts} keyExtractor={w => w.id} contentContainerStyle={styles.content}
@@ -199,6 +209,7 @@ function WorkoutLog({ base }: { base: string }) {
       <View style={styles.between}><Text style={styles.brand}>{t.appTitle}</Text><Text style={styles.eyebrow}>{t.localBadge}</Text></View>
       {authControls}
       <Text style={styles.muted}>{t.pending(rows.filter(r => r.pending).length)}</Text>
+      <Button label={t.programs} secondary onPress={() => setProgramMenu(true)} />
       <Button label={t.refresh} secondary onPress={() => { void sync.run(); }} />
       {legacy && <Button label={t.import} secondary onPress={importLegacy} />}
       {rows.filter(r => r.error).map(r => <Card key={r.workout.id}>
@@ -215,9 +226,10 @@ function WorkoutLog({ base }: { base: string }) {
     ListFooterComponent={<Text style={styles.muted}>{t.localHint}</Text>}
     renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`${item.date}, ${item.title || t.untitled}, ${t.summary(item.exercises.length, setCount(item))}`}
       onPress={() => open(item)} style={({ pressed }) => pressed && styles.pressed}>
-      <Card><Text style={styles.eyebrow}>{item.date}</Text><Text style={styles.title}>{item.title || t.untitled}</Text>
+      <Card><Text style={styles.title}>{item.date} · {item.title || t.untitled}</Text>
+        {!!t.intake(item.kcal, item.proteinG) && <Text style={styles.muted}>{t.intake(item.kcal, item.proteinG)}</Text>}
         <Text style={styles.muted}>{t.summary(item.exercises.length, setCount(item))}</Text>
-        <Text style={styles.text} numberOfLines={2}>{item.exercises.map(e => e.name).join(t.exerciseSeparator)}</Text>
+        <Text style={styles.text}>{item.exercises.map(e => `${e.name} ${e.sets.map(s => t.setPreview(String(s.kg), String(s.reps))).join(t.setPreviewSeparator)}`).join('\n')}</Text>
         {!!item.notes && <Text style={styles.muted} numberOfLines={2}>{item.notes}</Text>}
       </Card>
     </Pressable>} />;

@@ -2,7 +2,9 @@ import { ApiError } from './api.ts';
 import type { Api, ErrorCode, Session } from './api.ts';
 import type { AccountStore } from './accountStore.ts';
 
-type Active = { session: Session; store: AccountStore; api: Api };
+import type { ProgramStore } from './programStore.ts';
+
+type Active = { session: Session; store: AccountStore; api: Api; programs?: ProgramStore };
 export function createSync(onChange: () => void, onError: (code: ErrorCode | null) => void) {
   let active: Active | null = null, epoch = 0, running: Promise<void> | null = null, again = false;
   function current(a: Active, e: number) { return active === a && epoch === e; }
@@ -32,6 +34,30 @@ export function createSync(onChange: () => void, onError: (code: ErrorCode | nul
           onChange();
         }
         if (!current(a, e)) continue;
+        if (a.programs) {
+          for (;;) {
+            if (!current(a, e)) break;
+            const row = a.programs.rows().find(r => r.pending && !r.error);
+            if (!row) break;
+            a.programs.submitted(row.program.id);
+            const deleting = row.deleted && !!row.program.updated_at;
+            try {
+              const ack = await a.api.mutateProgram(a.session, row.program, deleting);
+              if (!current(a, e)) break;
+              a.programs.acknowledge(row, ack);
+            } catch (error) {
+              if (!current(a, e)) break;
+              if (error instanceof ApiError && error.status === 404 && deleting) a.programs.acknowledge(row, null);
+              else if (error instanceof ApiError && (error.status === 409 || error.status === 404)) a.programs.failure(row, error.code);
+              else throw error;
+            }
+            onChange();
+          }
+          if (!current(a, e)) continue;
+          const programs = await a.api.programs(a.session);
+          if (!current(a, e)) continue;
+          a.programs.merge(programs); onChange();
+        }
         const workouts = await a.api.history(a.session);
         if (!current(a, e)) continue;
         a.store.merge(workouts);
@@ -49,6 +75,27 @@ export function createSync(onChange: () => void, onError: (code: ErrorCode | nul
   return {
     activate(next: Active | null) { active = next; epoch++; if (running && next) again = true; },
     run,
+    async resolveProgram(id: string) {
+      const a = active, e = epoch;
+      if (!a?.programs) return;
+      const programs = a.programs, row = programs.rows().find(r => r.program.id === id);
+      if (!row) return;
+      const draftBefore = JSON.stringify(programs.draft());
+      while (running) await running;
+      if (!current(a, e)) return;
+      const unchanged = () => programs.rows().find(r => r.program.id === id)?.generation === row.generation && JSON.stringify(programs.draft()) === draftBefore;
+      if (!unchanged()) { onError('conflict'); return; }
+      running = (async () => {
+        try {
+          const all = await a.api.programs(a.session);
+          if (!current(a, e)) return;
+          if (!unchanged()) throw new ApiError('conflict');
+          programs.resolve(id, all.find(p => p.id === id) ?? null);
+          onError(null); onChange();
+        } catch (error) { if (current(a, e)) onError(error instanceof ApiError ? error.code : 'request_failed'); }
+      })().finally(() => { running = null; if (again) { again = false; void run(); } });
+      await running;
+    },
     async resolve(id: string) {
       // Serialize resolution with writes/history, including an old account's in-flight request.
       const a = active, e = epoch;

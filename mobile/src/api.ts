@@ -1,7 +1,9 @@
 import { isDate, toDraft, validateDraft, WORKOUT_TYPES } from './model.ts';
+import { validateProgram, parseProgram } from './programs.ts';
+import type { Program } from './programs.ts';
 import type { Workout } from './model.ts';
 
-export type ErrorCode = 'configuration' | 'network' | 'invalid_response' | 'unauthorized' | 'conflict' | 'workout_not_found' | 'login_expired' | 'login_invalid' | 'request_failed';
+export type ErrorCode = 'configuration' | 'network' | 'invalid_response' | 'unauthorized' | 'conflict' | 'workout_not_found' | 'program_not_found' | 'login_expired' | 'login_invalid' | 'request_failed';
 export class ApiError extends Error {
   code: ErrorCode;
   status: number;
@@ -45,11 +47,11 @@ function intake(v: unknown): number | null {
   return v;
 }
 export function remoteWorkout(value: unknown): Workout {
-  const v = record(value), id = positive(v.id), date = text(v.performed_on), title = nullableText(v.type) ?? '';
-  if (!isDate(date) || (title && !WORKOUT_TYPES.some(t => t === title))) throw new ApiError('invalid_response');
+  const v = record(value), id = positive(v.id), date = text(v.performed_on), legacyType = nullableText(v.type) ?? '', title = v.name === undefined ? legacyType : text(v.name);
+  if (!isDate(date) || (legacyType && !WORKOUT_TYPES.some(t => t === legacyType))) throw new ApiError('invalid_response');
   text(v.raw_text);
   return {
-    id: `remote:${id}`, remoteId: id, revision: timestamp(v.updated_at), date, title,
+    id: `remote:${id}`, remoteId: id, revision: timestamp(v.updated_at), date, title, legacyType,
     notes: nullableText(v.note) ?? '', source: text(v.source), sourceRef: text(v.source_ref),
     kcal: intake(v.kcal), proteinG: intake(v.protein_g),
     startedAt: v.started_at == null ? null : timestamp(v.started_at), finishedAt: v.finished_at == null ? null : timestamp(v.finished_at),
@@ -59,7 +61,7 @@ export function remoteWorkout(value: unknown): Workout {
       text(e.exercise);
       const name = text(e.name_as_written);
       if (!name.trim()) throw new ApiError('invalid_response');
-      return { id: `entry:${i}`, name, sets: array(e.sets).map((value, j) => {
+      return { id: `entry:${i}`, name, canonicalName: text(e.exercise), sets: array(e.sets).map((value, j) => {
         const s = record(value), weight = text(s.weight);
         if (!/^\d+(?:\.\d{1,2})?$/.test(weight) || Number(weight) > 9999.99) throw new ApiError('invalid_response');
         return { id: `set:${j}`, kg: Number(weight), reps: positive(s.reps) };
@@ -72,7 +74,7 @@ export function workoutBody(w: Workout) {
   const raw = [w.date, w.title, w.kcal == null ? '' : `kcal: ${w.kcal}`, w.proteinG == null ? '' : `protein: ${w.proteinG}g`,
     w.startedAt ? `started_at: ${w.startedAt}` : '', w.finishedAt ? `finished_at: ${w.finishedAt}` : '',
     w.notes, ...entries.map(e => `${e.name}${e.sets.length ? ': ' + e.sets.map(s => `${s.weight}x${s.reps}`).join(', ') : ''}`)].filter(Boolean).join('\n');
-  return { performed_on: w.date, type: w.title, kcal: w.kcal, protein_g: w.proteinG, note: w.notes, raw_text: raw,
+  return { performed_on: w.date, name: w.title, type: w.legacyType ?? (WORKOUT_TYPES.some(t => t === w.title) ? w.title : ''), kcal: w.kcal, protein_g: w.proteinG, note: w.notes, raw_text: raw,
     entries, started_at: w.startedAt, finished_at: w.finishedAt };
 }
 export function createApi(base: string, fetcher: typeof fetch = fetch) {
@@ -92,13 +94,29 @@ export function createApi(base: string, fetcher: typeof fetch = fetch) {
     } catch { throw new ApiError('network'); } finally { clearTimeout(timeout); }
     if (!response.ok) {
       let code: ErrorCode = response.status === 401 ? 'unauthorized' : response.status === 409 ? 'conflict' : response.status === 404 ? 'workout_not_found' : 'request_failed';
-      try { const e = record(await response.json()).error; if (e === 'login_expired' || e === 'login_invalid') code = e; } catch { /* Status remains authoritative. */ }
+      try { const e = record(await response.json()).error; if (e === 'login_expired' || e === 'login_invalid' || e === 'program_not_found') code = e; } catch { /* Status remains authoritative. */ }
       throw new ApiError(code, response.status);
     }
     if (response.status === 204) return null;
     try { return await response.json(); } catch { throw new ApiError('invalid_response'); }
   }
   return {
+    async programs(s: Session): Promise<Program[]> {
+      authorized(s);
+      const v = record(await request(`/v1/users/${s.userId}/programs`, 'GET', undefined, s.token));
+      return array(v.programs).map(parseProgram);
+    },
+    async mutateProgram(s: Session, p: Program, deleted: boolean): Promise<Program | null> {
+      authorized(s);
+      if (validateProgram(p) || (deleted && !p.updated_at)) throw new ApiError('request_failed');
+      if (p.updated_at) timestamp(p.updated_at);
+      const body = deleted ? { expected_updated_at: p.updated_at } : { name: p.name.trim(), entries: p.entries.map(e => ({ ...e, name: e.name.trim() })), ...(p.updated_at ? { expected_updated_at: p.updated_at } : { id: p.id }) };
+      const value = await request(`/v1/users/${s.userId}/programs${p.updated_at ? `/${p.id}` : ''}`, deleted ? 'DELETE' : p.updated_at ? 'PUT' : 'POST', body, s.token);
+      if (deleted) { if (value !== null) throw new ApiError('invalid_response'); return null; }
+      const result = parseProgram(value);
+      if (result.id !== p.id) throw new ApiError('invalid_response');
+      return result;
+    },
     async start(): Promise<Login> {
       const v = record(await request('/auth/telegram/mobile/login', 'POST'));
       const bot = text(v.bot_url), nonce = text(v.nonce);
@@ -134,7 +152,7 @@ export function createApi(base: string, fetcher: typeof fetch = fetch) {
       if (w.remoteId !== undefined) { positive(w.remoteId); timestamp(w.revision); }
       else if (deleted || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(w.sourceRef ?? '')) throw new ApiError('request_failed');
       if (!deleted) {
-        if (validateDraft(toDraft(w)) || (w.title && !WORKOUT_TYPES.some(t => t === w.title))) throw new ApiError('request_failed');
+        if (validateDraft(toDraft(w)) || (w.legacyType && !WORKOUT_TYPES.some(t => t === w.legacyType))) throw new ApiError('request_failed');
         intake(w.kcal); intake(w.proteinG);
         if (Boolean(w.startedAt) !== Boolean(w.finishedAt)) throw new ApiError('request_failed');
         if (w.startedAt && w.finishedAt) {

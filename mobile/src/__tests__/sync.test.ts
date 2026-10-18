@@ -11,6 +11,8 @@ import { ApiError, apiURL, createApi, remoteWorkout, workoutBody } from '../api.
 import type { Session } from '../api.ts';
 import { createAuth, LOGIN_KEY, SESSION_KEY } from '../auth.ts';
 import { createSync } from '../sync.ts';
+import { createProgramStore } from '../programStore.ts';
+import type { Program } from '../programs.ts';
 import { toDraft, toWorkout } from '../model.ts';
 import type { Draft } from '../model.ts';
 
@@ -63,7 +65,7 @@ function runner(store: ReturnType<typeof createAccountStore>, fetcher: typeof fe
   return { sync, errors, api };
 }
 
-test('storage: v1 migration preserves unassigned records and draft; explicit import normalizes legacy names atomically', () => {
+test('storage: v1 migration preserves unassigned records and draft; explicit import preserves free legacy names atomically', () => {
   const { db, connection, store } = setup();
   try {
     // Build the actual previous schema, not a mocked migration.
@@ -79,13 +81,13 @@ test('storage: v1 migration preserves unassigned records and draft; explicit imp
     assert.equal(migrated.legacy().workouts.length, 1);
     assert.equal(migrated.load().workouts.length, 0);
     migrated.clearDraft(); migrated.importLegacy(randomUUID);
-    assert.equal(migrated.load().workouts[0].title, '');
-    assert.equal(migrated.load().workouts[0].notes, 'My legacy name\nsession');
-    assert.equal(migrated.load().draft?.title, 'upper');
+    assert.equal(migrated.load().workouts[0].title, 'My legacy name');
+    assert.equal(migrated.load().workouts[0].notes, 'session');
+    assert.equal(migrated.load().draft?.title, 'UPPER');
     assert.equal(migrated.legacy().workouts.length, 0);
     assert.equal(migrated.legacy().draft, null);
     assert.equal(migrated.rows()[0].pending, true);
-    assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 2);
+    assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
     assert.equal(store.load().workouts.length, 1);
   } finally { db.close(); }
 });
@@ -339,7 +341,7 @@ test('storage: importing a draft editing a legacy workout preserves their identi
     store.importLegacy(randomUUID);
     const data = store.load(); assert.equal(data.draft?.id, data.workouts[0].id);
     store.save(data.draft!); assert.equal(store.rows().length, 1);
-    assert.equal(store.load().workouts[0].notes, 'Legacy name\nunfinished edit');
+    assert.equal(store.load().workouts[0].notes, 'unfinished edit');
   } finally { db.close(); }
 });
 
@@ -356,7 +358,7 @@ test('sync: conflict reload cannot discard a newer saved edit or an active draft
       if (save) store.save({ ...toDraft(w), notes: 'newer save' });
       else store.writeDraft({ ...toDraft(w), notes: 'newer draft' });
       gate.resolve(json({ workouts: [{ ...wire(), note: 'remote' }], next_cursor: null })); await resolving;
-      assert.equal(errors.at(-1), 'conflict');
+      assert.equal(errors[errors.length - 1], 'conflict');
       if (save) assert.equal(store.load().workouts[0].notes, 'newer save');
       else assert.equal(store.load().draft?.notes, 'newer draft');
     }
@@ -458,7 +460,7 @@ test('auth: malformed stored session or login JSON returns typed invalid_respons
   const api = createApi(base, fake(() => { throw new Error('must not fetch'); }));
   for (const key of [SESSION_KEY, LOGIN_KEY]) {
     const secure = vault(); secure.data.set(key, '{broken');
-    await assert.rejects(createAuth(base, api, secure).restore(), e => e instanceof ApiError && e.code === 'invalid_response');
+    await assert.rejects(createAuth(base, api, secure).restore(), (e: unknown) => e instanceof ApiError && e.code === 'invalid_response');
     assert.equal(secure.data.get(key), '{broken');
   }
 });
@@ -575,4 +577,153 @@ test('sync: late create ACK leaves newer generation pending through a revisioned
     assert.equal(reopened.rows()[0].pending, true); assert.equal(reopened.rows()[0].error, 'conflict');
     assert.equal(reopened.rows()[0].generation, 2); assert.equal(reopened.rows()[0].workout.notes, 'newer local edit');
   } finally { db.close(); }
+});
+
+// Program cache/outbox uses the same SQLite adapter and foreground gate as workouts.
+function programFixture(): Program { return { id: randomUUID(), name: 'Push day', entries: [{ name: 'Bench', set_count: 3, target_reps: null }] }; }
+function programRunner(store: ReturnType<typeof createAccountStore>, programs: ReturnType<typeof createProgramStore>, fetcher: typeof fetch) {
+  const errors: (string | null)[] = [];
+  const sync = createSync(() => {}, code => errors.push(code));
+  sync.activate({ session, store, programs, api: createApi(base, fetcher) });
+  return { sync, errors };
+}
+function programHistory(url: string, all: Program[] = []) {
+  return json(url.endsWith('/programs') ? { programs: all } : { workouts: [], next_cursor: null });
+}
+test('program SQLite: v2 upgrade preserves drafts, generations, errors and v1 records; account isolation', () => {
+  const { db, connection, store } = setup();
+  try {
+    const d = fixture(); store.save(d); store.failure(store.rows()[0], 'conflict'); store.writeDraft(d);
+    createStore(connection).save(fixture());
+    db.exec('DROP TABLE account_programs; DROP TABLE program_drafts; PRAGMA user_version = 2;');
+    const programs = createProgramStore(connection, accountKey(session)), p = programFixture();
+    programs.writeDraft(p); programs.save(p); programs.writeDraft({ ...p, name: 'unfinished' });
+    assert.equal(store.rows()[0].generation, 1); assert.equal(store.rows()[0].error, 'conflict');
+    assert.deepEqual(store.load().draft, d); assert.equal(store.legacy().workouts.length, 1);
+    assert.equal(db.prepare('PRAGMA user_version').get()?.user_version, 3);
+    for (const account of [accountKey({ ...session, userId: 2 }), accountKey({ ...session, apiURL: 'https://other.invalid' })]) {
+      const other = createProgramStore(connection, account); assert.deepEqual(other.load(), []); assert.equal(other.draft(), null);
+    }
+    const reopened = createProgramStore(connection, accountKey(session));
+    assert.deepEqual(reopened.load(), [p]); assert.equal(reopened.draft()?.name, 'unfinished'); assert.equal(reopened.rows()[0].pending, true);
+    db.exec("CREATE TRIGGER program_fail BEFORE DELETE ON program_drafts BEGIN SELECT RAISE(ABORT,'disk_failure'); END;");
+    assert.throws(() => programs.save({ ...p, name: 'should roll back' }), /disk_failure/);
+    assert.equal(programs.rows()[0].generation, 1); assert.equal(programs.load()[0].name, 'Push day');
+    assert.equal(programs.draft()?.name, 'unfinished');
+  } finally { db.close(); }
+});
+test('program API: ordered entries/null targets, authorized revisioned CRUD and complete validation', async () => {
+  const p = programFixture(), complete = { ...p, updated_at: revision };
+  const methods: string[] = [];
+  const api = createApi(base, fake((url, init) => {
+    methods.push(init.method!); assert.equal((init.headers as Record<string,string>)['X-Gymbro-Write'], '1');
+    assert.equal((init.headers as Record<string,string>).Authorization, `Bearer ${session.token}`);
+    const body = init.body ? JSON.parse(init.body as string) : null;
+    if (init.method === 'POST') { assert.equal(body.id, p.id); assert.equal(body.entries[0].target_reps, null); }
+    if (init.method === 'PUT' || init.method === 'DELETE') { assert.ok(url.endsWith('/' + p.id)); assert.equal(body.expected_updated_at, revision); }
+    return init.method === 'DELETE' ? json(null,204) : init.method === 'GET' ? json({ programs: [complete] }) : json(complete, init.method === 'POST' ? 201 : 200);
+  }));
+  assert.deepEqual(await api.mutateProgram(session,p,false), complete);
+  await api.mutateProgram(session,complete,false); await api.programs(session); await api.mutateProgram(session,complete,true);
+  assert.deepEqual(methods, ['POST','PUT','GET','DELETE']);
+  await assert.rejects(api.mutateProgram(session,{ ...p, name: '' },false), /request_failed/);
+  await assert.rejects(api.programs({ ...session, userId: 0 }), /invalid_response/);
+  await assert.rejects(createApi(base, fake(() => json({ programs: [{ ...complete, entries: [{ name: 'X', set_count: 0, target_reps: null }] }] }))).programs(session), /invalid_response/);
+  await assert.rejects(createApi(base, fake(() => json({ ...complete, id: randomUUID() }))).mutateProgram(session,p,false), /invalid_response/);
+});
+test('program sync: uncertain creates survive restart and stable UUID retry, newer edits use ACK revision', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'djym-programs-')), file = join(directory,'cache.db');
+  let db = new DatabaseSync(file);
+  try {
+    let connection = adapter(db), store = createAccountStore(connection, accountKey(session));
+    let programs = createProgramStore(connection, accountKey(session)); const p = programFixture(); programs.save(p);
+    await programRunner(store, programs, fake(() => { throw new Error('offline'); })).sync.run();
+    db.close(); db = new DatabaseSync(file); connection = adapter(db); store = createAccountStore(connection, accountKey(session)); programs = createProgramStore(connection, accountKey(session));
+    assert.equal(programs.rows()[0].submitted, true);
+    const gate = deferred<Response>(), started = deferred<void>(); const methods: string[] = [];
+    const { sync } = programRunner(store,programs,fake((url,init) => {
+      if (init.method === 'POST') { methods.push('POST'); assert.equal(JSON.parse(init.body as string).id,p.id); started.resolve(); return gate.promise; }
+      if (init.method === 'PUT') { methods.push('PUT'); const b = JSON.parse(init.body as string); assert.equal(b.name,'Edited'); assert.equal(b.expected_updated_at,revision); return json({ ...p,name:'Edited',updated_at:newer }); }
+      return programHistory(url,[{ ...p,name:'Edited',updated_at:newer }]);
+    }));
+    const running = sync.run(); await started.promise;
+    programs.save({ ...p, name:'Edited' }); programs.writeDraft({ ...p, name:'active draft' });
+    gate.resolve(json({ ...p,updated_at:revision })); await running;
+    assert.deepEqual(methods,['POST','PUT']); assert.equal(programs.rows()[0].pending,false);
+    assert.equal(programs.draft()?.name,'active draft'); assert.equal(programs.draft()?.updated_at,newer);
+  } finally { db.close(); rmSync(directory,{recursive:true,force:true}); }
+});
+for (const duringCreate of [true,false]) test(`program sync: delete during ${duringCreate ? 'create' : 'update'} waits for ACK; DELETE 404 completes`, async () => {
+  const { db,connection,store } = setup();
+  try {
+    const programs = createProgramStore(connection,accountKey(session)), p = programFixture();
+    if (!duringCreate) programs.merge([{ ...p,updated_at:revision }]);
+    programs.save(p);
+    const gate = deferred<Response>(), started = deferred<void>(); const methods: string[] = [];
+    const {sync} = programRunner(store,programs,fake((url,init) => {
+      if (init.method !== 'GET') methods.push(init.method!);
+      if (init.method === (duringCreate ? 'POST' : 'PUT')) { started.resolve(); return gate.promise; }
+      if (init.method === 'DELETE') { assert.equal(JSON.parse(init.body as string).expected_updated_at,newer); return json({error:'program_not_found'},404); }
+      return programHistory(url);
+    }));
+    const running = sync.run(); await started.promise; programs.remove(p.id); assert.deepEqual(programs.load(),[]);
+    gate.resolve(json({...p,updated_at:newer})); await running;
+    assert.deepEqual(methods,[duringCreate ? 'POST':'PUT','DELETE']); assert.deepEqual(programs.rows(),[]);
+    const unsent = programFixture(); programs.save(unsent); programs.remove(unsent.id); assert.deepEqual(programs.rows(),[]);
+  } finally { db.close(); }
+});
+for (const status of [404,409]) test(`program sync: ${status} conflicts stay sticky across edits/deletes/history until confirmed reload`, async () => {
+  const {db,connection,store} = setup();
+  try {
+    const programs = createProgramStore(connection,accountKey(session)), p = programFixture(); programs.save(p);
+    let posts=0, fail=false;
+    const {sync} = programRunner(store,programs,fake((url,init) => {
+      if (init.method === 'POST') { posts++; return json({error:status===409?'conflict':'program_not_found'},status); }
+      if (fail) throw new Error('offline'); return programHistory(url,[{...p,name:'Server',updated_at:newer}]);
+    }));
+    await sync.run(); programs.save({...p,name:'Local'}); programs.remove(p.id); await sync.run();
+    assert.equal(posts,1); assert.equal(programs.rows()[0].pending,true); assert.ok(programs.rows()[0].error); assert.equal(programs.rows()[0].program.updated_at,undefined);
+    fail=true; await sync.resolveProgram(p.id); assert.ok(programs.rows()[0].error);
+    fail=false; await sync.resolveProgram(p.id); assert.equal(programs.load()[0].name,'Server'); assert.equal(programs.rows()[0].pending,false);
+  } finally {db.close();}
+});
+test('program sync: failed snapshot keeps cache, late old-account ACK cannot apply to either account', async () => {
+  const {db,connection,store} = setup();
+  try {
+    const programs = createProgramStore(connection,accountKey(session)), p = programFixture(); programs.merge([{...p,updated_at:revision}]);
+    await programRunner(store,programs,fake(() => { throw new Error('offline'); })).sync.run(); assert.equal(programs.load().length,1);
+    programs.save({...p,name:'local'});
+    const gate=deferred<Response>(), started=deferred<void>();
+    const {sync}=programRunner(store,programs,fake(() => {started.resolve();return gate.promise;}));
+    const running=sync.run(); await started.promise; sync.activate(null);
+    const nextSession={...session,userId:2}, next=createAccountStore(connection,accountKey(nextSession)), nextPrograms=createProgramStore(connection,accountKey(nextSession));
+    sync.activate({session:nextSession,store:next,programs:nextPrograms,api:createApi(base,fake(url=>programHistory(url)))});
+    gate.resolve(json({...p,updated_at:newer})); await running;
+    assert.equal(programs.rows()[0].pending,true); assert.equal(programs.rows()[0].program.updated_at,revision); assert.deepEqual(nextPrograms.load(),[]);
+  } finally {db.close();}
+});
+test('program sync: concurrent reload serialized, newer draft/save cannot be discarded, missing server resolves deletion', async () => {
+  const {db,connection,store} = setup();
+  try {
+    const programs=createProgramStore(connection,accountKey(session)),p=programFixture(); programs.save(p); programs.failure(programs.rows()[0],'conflict');
+    const gate=deferred<Response>(),started=deferred<void>(); let requests=0;
+    const {sync,errors}=programRunner(store,programs,fake(()=>{requests++;started.resolve();return gate.promise;}));
+    const first=sync.resolveProgram(p.id); await started.promise; const second=sync.resolveProgram(p.id);
+    programs.writeDraft({...p,name:'new draft'}); programs.save({...p,name:'new save'});
+    gate.resolve(json({programs:[{...p,updated_at:newer}]})); await first; await second;
+    assert.equal(requests,1); assert.deepEqual(errors,['conflict','conflict']); assert.equal(programs.load()[0].name,'new save');
+    await programRunner(store,programs,fake(url=>programHistory(url))).sync.resolveProgram(p.id); assert.deepEqual(programs.rows(),[]);
+  } finally {db.close();}
+});
+test('program SQLite: malformed cache/draft fails closed without deleting records', () => {
+  const {db,connection} = setup();
+  try {
+    const programs=createProgramStore(connection,accountKey(session)), p=programFixture(); programs.save(p);
+    db.prepare('UPDATE account_programs SET payload=?').run('{bad');
+    assert.throws(()=>programs.load(),/invalid_storage/);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM account_programs').get()?.n,1);
+    programs.writeDraft(p); db.prepare('UPDATE program_drafts SET payload=?').run('{"id":"x","entries":[]}');
+    assert.throws(()=>programs.draft(),/invalid_storage/);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM program_drafts').get()?.n,1);
+  } finally {db.close();}
 });

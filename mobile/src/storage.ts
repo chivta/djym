@@ -2,7 +2,7 @@ import { parseDraft, parseWorkout, toWorkout } from './model.ts';
 import type { Draft, Workout } from './model.ts';
 
 export const DATABASE_NAME = 'djym.db';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const DRAFT_KEY = 1;
 export type Database = {
   execSync(sql: string): void;
@@ -34,6 +34,15 @@ export function createStore(db: Database) {
         CREATE TABLE account_drafts (account TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL);
         PRAGMA user_version = 2;
       `);
+    });
+  }
+  if (version < 3) {
+    db.withTransactionSync(() => {
+      db.execSync(`CREATE TABLE IF NOT EXISTS account_programs (account TEXT NOT NULL, id TEXT NOT NULL, payload TEXT NOT NULL,
+        generation INTEGER NOT NULL, pending INTEGER NOT NULL, deleted INTEGER NOT NULL, submitted INTEGER NOT NULL,
+        error TEXT NOT NULL, PRIMARY KEY(account,id));
+        CREATE TABLE IF NOT EXISTS program_drafts (account TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL);
+        PRAGMA user_version = 3;`);
     });
   }
   return {

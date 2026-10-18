@@ -106,7 +106,7 @@ export function createAccountStore(db: Database, account: string) {
           let id = importedIds.get(d.id);
           if (!id) { id = uuid(); importedIds.set(d.id, id); }
           const title = WORKOUT_TYPES.find(t => t.toLowerCase() === d.title.trim().toLowerCase()) ?? '';
-          return { ...d, id, title, notes: [!title ? d.title : '', d.notes].filter(Boolean).join('\n') };
+          return { ...d, id, legacyType: title };
         };
         for (const w of data.workouts) {
           saveInside(normalize({ ...w, exercises: w.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s, kg: String(s.kg), reps: String(s.reps) })) })) }));

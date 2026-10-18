@@ -2,19 +2,23 @@ import { useState } from 'react';
 import { existingSelection, exercisePreview, invalidExerciseId, toggleExercise } from './exerciseList';
 import { randomUUID } from 'expo-crypto';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { MAX_TEXT_LENGTH, WORKOUT_TYPES } from './model';
-import type { Draft, DraftExercise, DraftSet } from './model';
+import { MAX_TEXT_LENGTH, renameDraft } from './model';
+import type { Draft, DraftExercise, DraftSet, Workout } from './model';
 import { t } from './i18n';
 import { colors, styles, TOUCH_TARGET } from './theme';
 import { Button, Card, Field } from './ui';
 
+import { acceptReps, exerciseSets, matchingProgram, normalizeName, plannedSets, previousWeights, weightHint } from './programs';
+import type { Program } from './programs';
+
 const WEIGHT_INPUT_LENGTH = 7;
 const REPS_INPUT_LENGTH = 4;
 const DATE_INPUT_LENGTH = 10;
-const EMPTY_WEIGHT = '0';
 
 type EditorProps = {
   draft: Draft;
+  history: Workout[];
+  programs: Program[];
   onChange: (draft: Draft) => void;
   onBack: () => void;
   onSave: () => void;
@@ -28,8 +32,9 @@ export function Editor(props: EditorProps) {
   return <EditorSession key={props.draft.id} {...props} />;
 }
 
-function EditorSession({ draft, onChange, onBack, onSave, onDiscard, onDelete, status, error }: EditorProps) {
+function EditorSession({ draft, history, programs, onChange, onBack, onSave, onDiscard, onDelete, status, error }: EditorProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const program = matchingProgram(draft, programs);
   const selection = existingSelection(selectedId, draft.exercises);
   function save() {
     const invalidId = invalidExerciseId(draft);
@@ -46,7 +51,7 @@ function EditorSession({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
     const id = randomUUID();
     setSelectedId(id);
     onChange({ ...draft, exercises: [...draft.exercises, {
-      id, name: '', sets: [{ id: randomUUID(), kg: EMPTY_WEIGHT, reps: '' }],
+      id, name: '', sets: plannedSets(1, randomUUID),
     }] });
   }
   return <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -55,17 +60,15 @@ function EditorSession({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
         <Button label={t.back} onPress={onBack} secondary />
         <Text style={styles.title}>{t.editorTitle}</Text>
       </View>
+      {!!t.intake(draft.kcal, draft.proteinG) && <Text style={styles.muted}>{t.intake(draft.kcal, draft.proteinG)}</Text>}
       {status}
     </View>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
       <Card>
         <Field label={t.date} value={draft.date} onChangeText={date => onChange({ ...draft, date })}
           placeholder={t.datePlaceholder} maxLength={DATE_INPUT_LENGTH} autoCorrect={false} autoCapitalize="none" keyboardType="numbers-and-punctuation" />
-        <Text style={styles.muted}>{t.optionalLabel(t.title)}</Text>
-        <View style={styles.field}>
-          <Button label={draft.title ? t.noType : `✓ ${t.noType}`} secondary onPress={() => onChange({ ...draft, title: '' })} />
-          {WORKOUT_TYPES.map(type => <Button key={type} label={`${draft.title === type ? '✓ ' : ''}${t.types[type]}`} secondary onPress={() => onChange({ ...draft, title: type })} />)}
-        </View>
+        <Field label={t.optionalLabel(t.title)} value={draft.title} onChangeText={title => onChange(renameDraft(draft, title))}
+          placeholder={t.titlePlaceholder} maxLength={MAX_TEXT_LENGTH} />
         <Field label={t.optionalLabel(t.notes)} value={draft.notes} onChangeText={notes => onChange({ ...draft, notes })}
           placeholder={t.notesPlaceholder} maxLength={MAX_TEXT_LENGTH} multiline />
       </Card>
@@ -75,9 +78,13 @@ function EditorSession({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
       </View>
       <View style={styles.exerciseList}>
         {draft.exercises.map((entry, exerciseIndex) => {
+          const target = program?.entries.find(e => normalizeName(e.name) === normalizeName(entry.name));
+          const weights = previousWeights(draft, entry, history);
+          const shownSets = exerciseSets(entry, target?.set_count ?? 0);
+          const displayed = { ...entry, sets: shownSets };
           const expanded = selection === entry.id;
           const name = entry.name.trim() || t.unnamedExercise(exerciseIndex);
-          const preview = exercisePreview(entry.sets, !!draft.remoteId);
+          const preview = exercisePreview(entry.sets.filter(s => !s.planned || s.kg.trim() || s.reps.trim()), !!draft.remoteId);
           return <View key={entry.id} style={styles.exerciseRow}>
             <Pressable accessibilityRole="button" accessibilityLabel={t.exerciseRowLabel(exerciseIndex, name, preview)}
               accessibilityState={{ expanded }} style={({ pressed }) => [styles.exerciseHeader, pressed && styles.pressed]}
@@ -105,24 +112,28 @@ function EditorSession({ draft, onChange, onBack, onSave, onDiscard, onDelete, s
                 <Text style={styles.setLabel}>{t.reps}</Text>
                 <View style={{ width: TOUCH_TARGET }} />
               </View>
-              {entry.sets.map((set, setIndex) => <View key={set.id} style={styles.row}>
+              {shownSets.map((set, setIndex) => <View key={set.id} style={styles.row}>
                 <Text style={styles.setNumber}>{t.position(setIndex)}</Text>
-                <TextInput style={[styles.input, styles.setInput]} value={set.kg} onChangeText={kg => updateSet(entry, set.id, { kg })}
-                  keyboardType="decimal-pad" accessibilityLabel={t.kgLabel(exerciseIndex, setIndex)} maxLength={WEIGHT_INPUT_LENGTH} selectTextOnFocus />
-                <TextInput style={[styles.input, styles.setInput]} value={set.reps} onChangeText={reps => updateSet(entry, set.id, { reps })}
-                  keyboardType="number-pad" accessibilityLabel={t.repsLabel(exerciseIndex, setIndex)} maxLength={REPS_INPUT_LENGTH} selectTextOnFocus />
+                <TextInput style={[styles.input, styles.setInput]} value={set.kg} onChangeText={kg => updateSet(displayed, set.id, { kg })}
+                  placeholder={weightHint(weights, setIndex)} placeholderTextColor={colors.muted} keyboardType="decimal-pad" accessibilityLabel={t.kgLabel(exerciseIndex, setIndex)} maxLength={WEIGHT_INPUT_LENGTH} selectTextOnFocus />
+                <TextInput style={[styles.input, styles.setInput]} value={set.reps} onChangeText={reps => updateSet(displayed, set.id, acceptReps(set, reps, weightHint(weights, setIndex)))}
+                  placeholder={target?.target_reps == null ? '' : String(target.target_reps)} placeholderTextColor={colors.muted} keyboardType="number-pad" accessibilityLabel={t.repsLabel(exerciseIndex, setIndex)} maxLength={REPS_INPUT_LENGTH} selectTextOnFocus />
                 <Pressable style={styles.removeButton} accessibilityRole="button" accessibilityLabel={t.removeSet(exerciseIndex, setIndex)}
-                  onPress={() => updateExercise(entry.id, { sets: entry.sets.filter(value => value.id !== set.id) })}>
+                  onPress={() => updateExercise(entry.id, { sets: shownSets.filter(value => value.id !== set.id) })}>
                   <Text style={styles.removeText}>{t.removeGlyph}</Text>
                 </Pressable>
               </View>)}
               <Button label={t.addSet} secondary onPress={() => {
-                const last = entry.sets[entry.sets.length - 1];
-                updateExercise(entry.id, { sets: [...entry.sets, { id: randomUUID(), kg: last?.kg ?? EMPTY_WEIGHT, reps: last?.reps ?? '' }] });
+                updateExercise(entry.id, { sets: [...shownSets, ...plannedSets(1, randomUUID)] });
               }} />
             </View>}
           </View>;
         })}
+        {program?.entries.filter(e => !draft.exercises.some(actual => normalizeName(actual.name) === normalizeName(e.name))).map((entry, i) =>
+          <Pressable key={i} accessibilityRole="button" accessibilityLabel={t.acceptExercise(entry.name)} style={styles.exerciseHeader} onPress={() => {
+            const id = randomUUID(); setSelectedId(id);
+            onChange({ ...draft, exercises: [...draft.exercises, { id, name: entry.name, suggested: true, sets: plannedSets(entry.set_count, randomUUID) }] });
+          }}><Text style={[styles.exerciseName, { color: colors.muted }]}>{entry.name}</Text><Text style={styles.exercisePreview}>{t.programEntryPreview(entry.set_count, entry.target_reps)}</Text><Text style={styles.exerciseIndicator}>{t.addExerciseGlyph}</Text></Pressable>)}
         <Pressable accessibilityRole="button" accessibilityLabel={t.addExercise} onPress={addExercise}
           style={({ pressed }) => [styles.exerciseHeader, pressed && styles.pressed]}>
           <Text style={[styles.text, styles.flex]}>{t.addExercise}</Text>
