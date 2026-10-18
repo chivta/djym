@@ -22,12 +22,12 @@ test('program model: domain limits, normalization and ordered targets', () => {
     ...[0, 10000, 1.1].map(target_reps => ({ ...program, entries: [{ ...program.entries[0], target_reps }] }))]) assert.equal(validateProgram(bad), true);
   assert.equal(validateProgram({ ...program, entries: [{ name: 'X', set_count: 100, target_reps: null }] }), false);
 });
-test('suggestions: earlier matching calendar days only, skipping missing or unusable exercises; indexed and last-weight fallback', () => {
+test('suggestions: same or earlier matching calendar days, skipping missing or unusable exercises; indexed and last-weight fallback', () => {
   const recent = history('2026-10-17', 70); recent.exercises[0].sets.push({ id: 's2', kg: 72, reps: 7 });
   const missing = history('2026-10-16', 99, 'Other');
   const empty = history('2026-10-17', 99); empty.exercises[0].sets = [];
   const all = [history(draft.date, 999), history('2026-10-19', 888), missing, history('2026-10-15', 60), recent];
-  assert.deepEqual(previousWeights(draft, { name: '  BENCH ' }, all), [70,72]);
+  assert.deepEqual(previousWeights(draft, { name: '  BENCH ' }, all), [999]);
   assert.equal(weightHint([70,72], 8), '72'); assert.equal(weightHint([], 0), '0');
   assert.deepEqual(previousWeights(draft, { name: 'Bench' }, [missing, empty, history('2026-10-15', 60)]), [60]);
   assert.deepEqual(previousWeights(draft, { name: 'Written', canonicalName: 'Bench' }, [recent]), [70,72]);
@@ -151,4 +151,72 @@ test('loadProgramExercises: missing or blank program match is a no-op without al
   assert.equal(loadProgramExercises(unmatched, [program], uuid), unmatched);
   const blank = { ...draft, title: '  ' };
   assert.equal(loadProgramExercises(blank, [{ ...program, name: '' }], uuid), blank);
+});
+
+test('previousWeights: latest same-day remote ID wins over shuffled cache order and edit revisions', () => {
+  const older = { ...history(draft.date, 60), id: 'remote:20', remoteId: 20, revision: '2026-10-18T23:00:00Z' };
+  const latest = { ...history(draft.date, 80), id: 'remote:30', remoteId: 30, revision: '2026-10-18T10:00:00Z' };
+  latest.exercises[0].sets.push({ id: 'second', kg: 82.5, reps: 6 });
+  const earlier = { ...history('2026-10-17', 40), id: 'remote:99', remoteId: 99 };
+  for (const all of [[older, earlier, latest], [latest, older, earlier], [earlier, older, latest]]) {
+    assert.deepEqual(previousWeights(draft, { name: 'Bench' }, all), [80, 82.5]);
+  }
+});
+
+
+test('previousWeights: local same-day ties retain cache order when remote IDs cannot establish order', () => {
+  const first = { ...history(draft.date, 55), id: 'local:first', revision: '2026-10-18T09:00:00Z' };
+  const second = { ...history(draft.date, 65), id: 'local:second', revision: '2026-10-18T23:00:00Z' };
+  assert.deepEqual(previousWeights(draft, { name: 'Bench' }, [first, second]), [55]);
+  assert.deepEqual(previousWeights(draft, { name: 'Bench' }, [second, first]), [65]);
+  const remote = { ...second, id: 'remote:100', remoteId: 100 };
+  assert.deepEqual(previousWeights(draft, { name: 'Bench' }, [first, remote]), [55]);
+  assert.deepEqual(previousWeights(draft, { name: 'Bench' }, [remote, first]), [65]);
+});
+
+test('previousWeights: same-day matching normalizes names and aliases, excludes self/foreign/future, and falls back past unusable sets', () => {
+  const sameDay = { ...history(draft.date, 70, 'Written alias'), id: 'remote:10', remoteId: 10, title: '  PUSH   day  ' };
+  sameDay.exercises[0].canonicalName = ' Bench   press ';
+  sameDay.exercises[0].sets.push({ id: 'second', kg: 72.5, reps: 6 });
+  const current = { ...draft, remoteId: 20 };
+  const excluded = [
+    { ...history(draft.date, 999, 'Bench press'), id: draft.id },
+    { ...history(draft.date, 888, 'Bench press'), id: 'other-local-id', remoteId: 20 },
+    { ...history(draft.date, 777, 'Bench press'), id: 'foreign', title: 'Pull day', remoteId: 100 },
+    { ...history('2026-10-19', 666, 'Bench press'), id: 'future', remoteId: 101 },
+  ];
+  const exercise = { name: 'Custom written name', canonicalName: '  BENCH press ' };
+  assert.deepEqual(previousWeights(current, exercise, excluded), []);
+  assert.equal(weightHint(previousWeights(current, exercise, excluded), 0), '0');
+  const weights = previousWeights(current, exercise, [...excluded, sameDay]);
+  assert.deepEqual(weights, [70, 72.5]);
+  assert.deepEqual([0, 1, 2].map(i => weightHint(weights, i)), ['70', '72.5', '72.5']);
+  assert.deepEqual(previousWeights(current, { name: '  written   ALIAS ' }, [sameDay]), weights);
+  const missing = { ...history(draft.date, 99, 'Other'), id: 'remote:40', remoteId: 40 };
+  const unusable = { ...history(draft.date, 99, 'Bench press'), id: 'remote:30', remoteId: 30 };
+  unusable.exercises[0].sets = [{ id: 'bad-weight', kg: -1, reps: 8 }, { id: 'no-reps', kg: 99, reps: 0 }];
+  const earlier = { ...history('2026-10-17', 45, 'Bench press'), id: 'earlier', remoteId: 9 };
+  assert.deepEqual(previousWeights(current, exercise, [earlier, missing, unusable, sameDay]), weights);
+  assert.deepEqual(previousWeights(current, exercise, [missing, unusable, earlier]), [45]);
+});
+
+test('previousWeights: same-day grey hints stay out of untouched materialization and reps accepts them without replacing explicit kg', () => {
+  let sequence = 0;
+  const loaded = loadProgramExercises(draft, [program], () => `loaded:${++sequence}`);
+  const before = structuredClone(loaded);
+  const savedEarlierToday = { ...history(draft.date, 85), id: 'remote:50', remoteId: 50 };
+  const weights = previousWeights(loaded, loaded.exercises[0], [savedEarlierToday]);
+  assert.deepEqual(weights, [85]);
+  assert.deepEqual(loaded, before);
+  const restored = parseDraft(JSON.stringify(loaded));
+  assert.deepEqual(materializeDraft(restored).exercises, []);
+  const sets = restored.exercises[0].sets;
+  sets[0] = acceptReps(sets[0], '8', weightHint(weights, 0));
+  assert.equal(sets[0].kg, '85');
+  sets[1] = acceptReps({ ...sets[1], kg: '42.5' }, '6', weightHint(weights, 1));
+  assert.equal(sets[1].kg, '42.5');
+  assert.deepEqual(toWorkout(restored).exercises[0].sets, [
+    { id: sets[0].id, kg: 85, reps: 8 }, { id: sets[1].id, kg: 42.5, reps: 6 },
+  ]);
+  assert.deepEqual(loaded, before);
 });

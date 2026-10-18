@@ -45,7 +45,8 @@ export function previousWeights(d: Draft, exercise: Pick<DraftExercise, 'name' |
   const name = normalizeName(d.title);
   if (!name) return [];
   const names = [exercise.name, exercise.canonicalName ?? ''].map(normalizeName).filter(Boolean);
-  for (const w of history.filter(w => w.id !== d.id && (!d.remoteId || w.remoteId !== d.remoteId) && w.date < d.date && normalizeName(w.title) === name).sort((a,b) => b.date.localeCompare(a.date))) {
+  for (const w of history.filter(w => w.id !== d.id && (!d.remoteId || w.remoteId !== d.remoteId) && w.date <= d.date && normalizeName(w.title) === name).sort((a,b) =>
+    b.date.localeCompare(a.date) || (a.remoteId !== undefined && b.remoteId !== undefined ? b.remoteId - a.remoteId : 0))) {
     const e = w.exercises.find(e => [e.name, e.canonicalName ?? ''].some(n => names.includes(normalizeName(n))));
     const weights = e?.sets.filter(s => Number.isFinite(s.kg) && s.kg >= 0 && s.reps > 0).map(s => s.kg) ?? [];
     if (weights.length) return weights;
