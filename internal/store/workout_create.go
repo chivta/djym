@@ -25,7 +25,7 @@ func (s *Store) CreateWorkout(ctx context.Context, userID int64, req apiclient.S
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		for {
 			err := tx.QueryRow(ctx, createWorkout, userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG,
-				req.Note, req.RawText, req.Source, req.SourceRef, req.StartedAt, req.FinishedAt).Scan(&resp.WorkoutID, &resp.UpdatedAt)
+				req.Note, req.RawText, req.Source, req.SourceRef, req.StartedAt, req.FinishedAt, effectiveWorkoutName(req.Name, req.Type)).Scan(&resp.WorkoutID, &resp.UpdatedAt)
 			if err == nil {
 				resp.Created = true
 				return replaceWorkoutEntries(ctx, tx, userID, req.Entries, &resp)
@@ -47,7 +47,7 @@ func (s *Store) CreateWorkout(ctx context.Context, userID int64, req apiclient.S
 		// that committed while we waited cannot leave us comparing an older snapshot.
 		var w apiclient.Workout
 		err := tx.QueryRow(ctx, selectWorkouts+` WHERE w.id = $1`, resp.WorkoutID).Scan(
-			&w.ID, &w.PerformedOn, &w.Type, &w.Kcal, &w.ProteinG, &w.Note,
+			&w.ID, &w.Name, &w.PerformedOn, &w.Type, &w.Kcal, &w.ProteinG, &w.Note,
 			&w.StartedAt, &w.FinishedAt, &w.Source, &w.SourceRef, &w.RawText, &w.UpdatedAt, &w.Entries)
 		if err != nil {
 			return fmt.Errorf("read create replay: %w", err)
@@ -100,7 +100,7 @@ func decimalWeight(s string) string {
 }
 
 func sameWorkoutContent(w apiclient.Workout, req apiclient.SaveWorkoutRequest) bool {
-	if w.PerformedOn != req.PerformedOn || optionalValue(w.Type) != canonicalType(req.Type) ||
+	if w.Name != effectiveWorkoutName(req.Name, req.Type) || w.PerformedOn != req.PerformedOn || optionalValue(w.Type) != canonicalType(req.Type) ||
 		!sameOptionalInt(w.Kcal, req.Kcal) || !sameOptionalInt(w.ProteinG, req.ProteinG) ||
 		optionalValue(w.Note) != req.Note || w.RawText != req.RawText ||
 		!sameOptionalTime(w.StartedAt, req.StartedAt) || !sameOptionalTime(w.FinishedAt, req.FinishedAt) || len(w.Entries) != len(req.Entries) {

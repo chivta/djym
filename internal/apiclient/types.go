@@ -9,6 +9,7 @@ const (
 	CodeInvalidRequest   = "invalid_request"
 	CodeUnauthorized     = "unauthorized"
 	CodeUserNotFound     = "user_not_found"
+	CodeProgramNotFound  = "program_not_found"
 	CodeWorkoutNotFound  = "workout_not_found"
 	CodeSameExercise     = "same_exercise"
 	CodeExerciseNotFound = "exercise_not_found"
@@ -43,6 +44,7 @@ type ResolveIdentityResponse struct {
 // stores them as given, so absent clears any earlier values.
 type SaveWorkoutRequest struct {
 	PerformedOn string     `json:"performed_on"       validate:"required,datetime=2006-01-02"`
+	Name        *string    `json:"name,omitempty" validate:"omitempty,max=2000"`
 	Type        string     `json:"type,omitempty"     validate:"omitempty,workout_type"`
 	Kcal        *int       `json:"kcal,omitempty"     validate:"omitempty,gte=0"`
 	ProteinG    *int       `json:"protein_g,omitempty" validate:"omitempty,gte=0"`
@@ -58,6 +60,7 @@ type SaveWorkoutRequest struct {
 // UpdateWorkoutRequest replaces content without changing source identity.
 type UpdateWorkoutRequest struct {
 	PerformedOn       string     `json:"performed_on"       validate:"required,datetime=2006-01-02"`
+	Name              *string    `json:"name,omitempty" validate:"omitempty,max=2000"`
 	Type              string     `json:"type,omitempty"     validate:"omitempty,workout_type"`
 	Kcal              *int       `json:"kcal,omitempty"     validate:"omitempty,gte=0"`
 	ProteinG          *int       `json:"protein_g,omitempty" validate:"omitempty,gte=0"`
@@ -122,6 +125,7 @@ type ReplaceExerciseResponse struct {
 // UpdatedAt is the UTC revision at database precision.
 type Workout struct {
 	ID          int64          `json:"id"`
+	Name        string         `json:"name"`
 	PerformedOn string         `json:"performed_on"`
 	Type        *string        `json:"type"`
 	Kcal        *int           `json:"kcal"`
@@ -198,4 +202,45 @@ type PollMobileLoginResponse struct {
 	UserID       int64      `json:"user_id,omitempty"`
 	SessionToken string     `json:"session_token,omitempty"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
+}
+
+// Shared domain limits for free names and ordered program templates.
+const (
+	MaxNameCharacters    = 2000
+	MaxProgramExercises  = 100
+	MaxProgramSets       = 100
+	MaxProgramTargetReps = 9999
+)
+
+type ProgramEntry struct {
+	Name       string `json:"name"`
+	SetCount   int    `json:"set_count"`
+	TargetReps *int   `json:"target_reps"`
+}
+
+type Program struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Entries   []ProgramEntry `json:"entries"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+type CreateProgramRequest struct {
+	ID      string         `json:"id" validate:"required,uuid"`
+	Name    string         `json:"name"`
+	Entries []ProgramEntry `json:"entries"`
+}
+
+type UpdateProgramRequest struct {
+	Name              string         `json:"name"`
+	Entries           []ProgramEntry `json:"entries"`
+	ExpectedUpdatedAt time.Time      `json:"expected_updated_at" validate:"required"`
+}
+
+type DeleteProgramRequest struct {
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at" validate:"required"`
+}
+
+type ListProgramsResponse struct {
+	Programs []Program `json:"programs"`
 }

@@ -34,6 +34,10 @@ type handlerStore interface {
 	ResolveIdentity(context.Context, string, string) (int64, error)
 	ConfirmLogin(context.Context, string, int64) error
 	DeleteSession(context.Context, string) error
+	ListPrograms(context.Context, int64) (apiclient.ListProgramsResponse, error)
+	CreateProgram(context.Context, int64, apiclient.CreateProgramRequest) (apiclient.Program, bool, error)
+	UpdateProgram(context.Context, int64, string, apiclient.UpdateProgramRequest) (apiclient.Program, error)
+	DeleteProgram(context.Context, int64, string, time.Time) error
 	CreateWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
 	SaveWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
 	UpdateWorkout(context.Context, int64, int64, apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
@@ -62,6 +66,10 @@ func (h *handlers) register(service, userAccess *gin.RouterGroup) {
 	writes.POST("/users/:id/workouts", h.saveWorkout)
 	writes.PUT("/users/:id/workouts/:workout_id", h.updateWorkout)
 	writes.DELETE("/users/:id/workouts/:workout_id", h.deleteWorkout)
+	userAccess.GET("/users/:id/programs", h.listPrograms)
+	writes.POST("/users/:id/programs", h.createProgram)
+	writes.PUT("/users/:id/programs/:program_id", h.updateProgram)
+	writes.DELETE("/users/:id/programs/:program_id", h.deleteProgram)
 	service.GET("/users/:id/exercises", h.listExercises)
 	service.POST("/users/:id/exercises/replace", h.replaceExercise)
 	service.POST("/auth/telegram/confirm", h.confirmTelegram)
@@ -91,6 +99,10 @@ func (h *handlers) saveWorkout(c *gin.Context) {
 	var req apiclient.SaveWorkoutRequest
 	if !h.bindJSON(c, &req) {
 		return
+	}
+	if req.Name != nil {
+		name := trimName(*req.Name)
+		req.Name = &name
 	}
 	for i := range req.Entries {
 		req.Entries[i].Name = trimName(req.Entries[i].Name)
@@ -241,6 +253,10 @@ func (h *handlers) updateWorkout(c *gin.Context) {
 	var req apiclient.UpdateWorkoutRequest
 	if !h.bindStrictJSON(c, &req) {
 		return
+	}
+	if req.Name != nil {
+		name := trimName(*req.Name)
+		req.Name = &name
 	}
 	for i := range req.Entries {
 		req.Entries[i].Name = trimName(req.Entries[i].Name)

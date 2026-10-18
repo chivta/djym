@@ -20,7 +20,7 @@ const (
 	// and sets are aggregated to JSON per workout, keys matching apiclient tags.
 	// ($2::text IS NULL) means first page; otherwise keyset on (performed_on, id).
 	// trim_scale renders weights minimally (60.00 -> 60, 13.50 -> 13.5) without float64.
-	selectWorkouts = `SELECT w.id, w.performed_on::text, w.workout_type, w.kcal, w.protein_g, w.note,
+	selectWorkouts = `SELECT w.id, w.name, w.performed_on::text, w.workout_type, w.kcal, w.protein_g, w.note,
 			w.started_at, w.finished_at, w.source, w.source_ref, w.raw_text, w.updated_at,
 			COALESCE((
 				SELECT json_agg(json_build_object(
@@ -95,7 +95,7 @@ func (s *Store) ListWorkouts(ctx context.Context, userID int64, limit int, befor
 	resp := apiclient.ListWorkoutsResponse{Workouts: []apiclient.Workout{}}
 	for rows.Next() {
 		var w apiclient.Workout
-		err = rows.Scan(&w.ID, &w.PerformedOn, &w.Type, &w.Kcal, &w.ProteinG, &w.Note,
+		err = rows.Scan(&w.ID, &w.Name, &w.PerformedOn, &w.Type, &w.Kcal, &w.ProteinG, &w.Note,
 			&w.StartedAt, &w.FinishedAt, &w.Source, &w.SourceRef, &w.RawText, &w.UpdatedAt, &w.Entries)
 		if err != nil {
 			return apiclient.ListWorkoutsResponse{}, fmt.Errorf("scan workout: %w", err)

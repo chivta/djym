@@ -17,8 +17,8 @@ import (
 var selectAliasTarget = `SELECT exercise_id FROM exercise_aliases WHERE user_id = $1 AND alias_key = ` + norm("$2::text")
 
 const (
-	insertWorkout = `INSERT INTO workouts (user_id, performed_on, workout_type, kcal, protein_g, note, raw_text, source, source_ref, started_at, finished_at)
-		VALUES ($1, $2::text::date, NULLIF($3::text, ''), $4, $5, NULLIF($6::text, ''), $7, $8, $9, $10, $11)`
+	insertWorkout = `INSERT INTO workouts (user_id, performed_on, workout_type, kcal, protein_g, note, raw_text, source, source_ref, started_at, finished_at, name)
+		VALUES ($1, $2::text::date, NULLIF($3::text, ''), $4, $5, NULLIF($6::text, ''), $7, $8, $9, $10, $11, $12)`
 	// upsertWorkout keeps the workout id on conflict and bumps updated_at.
 	// Wall-clock time plus a microsecond floor keeps revisions distinct even when
 	// concurrent transactions start before waiting for the row lock.
@@ -26,6 +26,7 @@ const (
 	upsertWorkout = insertWorkout + ` ON CONFLICT (user_id, source, source_ref) DO UPDATE SET
 			performed_on = EXCLUDED.performed_on,
 			workout_type = EXCLUDED.workout_type,
+			name = EXCLUDED.name,
 			kcal         = EXCLUDED.kcal,
 			protein_g    = EXCLUDED.protein_g,
 			note         = EXCLUDED.note,
@@ -53,7 +54,7 @@ func (s *Store) SaveWorkout(ctx context.Context, userID int64, req apiclient.Sav
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, upsertWorkout,
 			userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG,
-			req.Note, req.RawText, req.Source, req.SourceRef, req.StartedAt, req.FinishedAt,
+			req.Note, req.RawText, req.Source, req.SourceRef, req.StartedAt, req.FinishedAt, effectiveWorkoutName(req.Name, req.Type),
 		).Scan(&resp.WorkoutID, &resp.Created, &resp.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("upsert workout: %w", err)
@@ -136,7 +137,7 @@ const (
 	lockWorkout   = `SELECT updated_at FROM workouts WHERE id = $1 AND user_id = $2 FOR UPDATE`
 	updateWorkout = `UPDATE workouts SET performed_on = $3::text::date,
  workout_type = NULLIF($4::text, ''), kcal = $5, protein_g = $6,
- note = NULLIF($7::text, ''), raw_text = $8, started_at = $9, finished_at = $10,
+ note = NULLIF($7::text, ''), raw_text = $8, started_at = $9, finished_at = $10, name = COALESCE($11::text, name),
  updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
  WHERE id = $1 AND user_id = $2 RETURNING updated_at`
 	deleteWorkout = `DELETE FROM workouts WHERE id = $1 AND user_id = $2`
@@ -166,7 +167,7 @@ func (s *Store) UpdateWorkout(ctx context.Context, userID, workoutID int64, req 
 		if err != nil {
 			return err
 		}
-		err = tx.QueryRow(ctx, updateWorkout, workoutID, userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG, req.Note, req.RawText, req.StartedAt, req.FinishedAt).Scan(&resp.UpdatedAt)
+		err = tx.QueryRow(ctx, updateWorkout, workoutID, userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG, req.Note, req.RawText, req.StartedAt, req.FinishedAt, trimmedWorkoutName(req.Name)).Scan(&resp.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("update workout: %w", err)
 		}
@@ -192,4 +193,19 @@ func (s *Store) DeleteWorkout(ctx context.Context, userID, workoutID int64, expe
 		}
 		return nil
 	})
+}
+
+func trimmedWorkoutName(name *string) *string {
+	if name == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*name)
+	return &trimmed
+}
+
+func effectiveWorkoutName(name *string, legacyType string) string {
+	if name == nil {
+		return canonicalType(legacyType)
+	}
+	return strings.TrimSpace(*name)
 }

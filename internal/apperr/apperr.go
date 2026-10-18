@@ -22,6 +22,7 @@ var (
 	ErrForbidden        = &AppError{Status: http.StatusForbidden, Code: apiclient.CodeForbidden}
 	ErrLoginInvalid     = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeLoginInvalid}
 	ErrLoginExpired     = &AppError{Status: http.StatusGone, Code: apiclient.CodeLoginExpired}
+	ErrProgramNotFound  = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeProgramNotFound}
 	ErrWorkoutNotFound  = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeWorkoutNotFound}
 	ErrUserNotFound     = &AppError{Status: http.StatusNotFound, Code: apiclient.CodeUserNotFound}
 	ErrSameExercise     = &AppError{Status: http.StatusUnprocessableEntity, Code: apiclient.CodeSameExercise}
