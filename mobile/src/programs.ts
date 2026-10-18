@@ -28,6 +28,19 @@ export function matchingProgram(d: Draft, programs: Program[]): Program | undefi
   const name = normalizeName(d.title);
   return name ? programs.find(p => normalizeName(p.name) === name) : undefined;
 }
+export function loadProgramExercises(draft: Draft, programs: Program[], uuid: () => string): Draft {
+  const program = matchingProgram(draft, programs);
+  if (!program) return draft;
+  const names = new Set(draft.exercises.map(e => normalizeName(e.name)));
+  const exercises = [...draft.exercises];
+  for (const entry of program.entries) {
+    const name = normalizeName(entry.name);
+    if (names.has(name)) continue;
+    names.add(name);
+    exercises.push({ id: uuid(), name: entry.name, suggested: true, sets: plannedSets(entry.set_count, uuid) });
+  }
+  return exercises.length === draft.exercises.length ? draft : { ...draft, exercises };
+}
 export function previousWeights(d: Draft, exercise: Pick<DraftExercise, 'name' | 'canonicalName'>, history: Workout[]): number[] {
   const name = normalizeName(d.title);
   if (!name) return [];

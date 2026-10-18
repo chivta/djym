@@ -12,6 +12,8 @@ export const styles = StyleSheet.create({
   content: { padding: space.md, gap: space.md, paddingBottom: space.xl },
   header: { paddingHorizontal: space.lg, paddingVertical: space.md, borderBottomWidth: 1, borderBottomColor: colors.border, gap: space.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  workoutNameRow: { flexDirection: 'row', alignItems: 'flex-end', gap: space.sm },
+  workoutNameColumn: { flex: 1, minWidth: 0 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   flex: { flex: 1 },
   brand: { fontSize: 24, fontWeight: '800', letterSpacing: -1.5, color: colors.text },

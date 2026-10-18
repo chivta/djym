@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { acceptReps, exerciseSets, matchingProgram, normalizeName, plannedSets, previousWeights, validateProgram, weightHint } from '../programs.ts';
-import { materializeDraft, newDraft, renameDraft, toDraft, toWorkout, validateDraft } from '../model.ts';
+import { acceptReps, exerciseSets, loadProgramExercises, matchingProgram, normalizeName, plannedSets, previousWeights, validateProgram, weightHint } from '../programs.ts';
+import { materializeDraft, newDraft, parseDraft, renameDraft, toDraft, toWorkout, validateDraft } from '../model.ts';
 import type { Draft, Workout } from '../model.ts';
 import { remoteWorkout, workoutBody } from '../api.ts';
 
@@ -84,4 +84,71 @@ test('free rename retains old cached classification without assigning a new free
   assert.equal(renamed.legacyType, 'push'); assert.equal(renamed.title, 'New free name');
   assert.equal(renameDraft(renamed, '').legacyType, 'push');
   assert.equal(renameDraft(newDraft('new'), 'push').legacyType, '');
+});
+
+
+test('loadProgramExercises: explicit normalized match populates ordered blank planned exercises with unique UUIDs', () => {
+  let sequence = 0;
+  const uuid = () => `uuid:${++sequence}`;
+  const template = { ...program, name: 'PUSH day', entries: [
+    { name: ' Bench press ', set_count: 3, target_reps: 10 },
+    { name: 'Push ups', set_count: 2, target_reps: null },
+  ] };
+  const renamed = renameDraft({ ...draft, title: 'Other' }, '  push   DAY  ');
+  assert.deepEqual(renamed.exercises, []);
+  const loaded = loadProgramExercises(renamed, [template], uuid);
+  assert.deepEqual(loaded.exercises.map(e => e.name), [' Bench press ', 'Push ups']);
+  assert.deepEqual(loaded.exercises.map(e => e.sets.length), [3, 2]);
+  assert.deepEqual({ ...loaded, exercises: [] }, renamed);
+  const ids = loaded.exercises.flatMap(e => [e.id, ...e.sets.map(s => s.id)]);
+  assert.equal(new Set(ids).size, 7);
+  assert.deepEqual(ids, Array.from({ length: 7 }, (_, i) => `uuid:${i + 1}`));
+  for (const entry of loaded.exercises) {
+    assert.equal(entry.suggested, true);
+    for (const set of entry.sets) assert.deepEqual(set, { id: set.id, kg: '', reps: '', planned: true });
+  }
+  const restored = parseDraft(JSON.stringify(loaded));
+  assert.deepEqual(restored, loaded);
+  assert.deepEqual(materializeDraft(restored).exercises, []);
+  assert.equal(validateDraft(restored)?.code, 'exercises');
+  assert.deepEqual(toWorkout({ ...restored, remoteId: 1 }).exercises, []);
+  assert.equal(loadProgramExercises(loaded, [template], uuid), loaded);
+  assert.equal(sequence, 7);
+  assert.deepEqual(renamed.exercises, []);
+});
+
+test('loadProgramExercises: preserves entered, partial and manual data and metadata while appending only missing names', () => {
+  const existing: Draft = { ...draft, remoteId: 4, revision: '2026-10-18T10:00:00Z', legacyType: 'push',
+    source: 'telegram', sourceRef: 'original', notes: 'Keep notes', kcal: 2400, proteinG: 160,
+    startedAt: '2026-10-18T09:00:00Z', finishedAt: '2026-10-18T10:00:00Z', exercises: [
+      { id: 'manual', name: 'Manual', sets: [{ id: 'manual-set', kg: '20', reps: '8' }] },
+      { id: 'bench', name: '  BENCH  ', canonicalName: 'Bench', sets: [{ id: 'partial-set', kg: '60', reps: '' }] },
+    ] };
+  const before = structuredClone(existing);
+  const template = { ...program, entries: [
+    { name: 'Bench', set_count: 3, target_reps: 10 },
+    { name: 'Dips', set_count: 2, target_reps: 12 },
+    { name: ' dips ', set_count: 4, target_reps: null },
+    { name: 'Fly', set_count: 1, target_reps: null },
+  ] };
+  let sequence = 0;
+  const loaded = loadProgramExercises(existing, [template], () => `added:${++sequence}`);
+  assert.deepEqual(existing, before);
+  assert.deepEqual({ ...loaded, exercises: existing.exercises }, existing);
+  assert.deepEqual(loaded.exercises.map(e => e.name), ['Manual', '  BENCH  ', 'Dips', 'Fly']);
+  assert.equal(loaded.exercises[0], existing.exercises[0]);
+  assert.equal(loaded.exercises[1], existing.exercises[1]);
+  assert.deepEqual(parseDraft(JSON.stringify(loaded)), loaded);
+  assert.deepEqual(materializeDraft(loaded).exercises, existing.exercises);
+  assert.deepEqual(validateDraft(loaded), { code: 'reps', exercise: 1, set: 0 });
+  assert.equal(loadProgramExercises(loaded, [template], () => { throw new Error('unexpected UUID'); }), loaded);
+});
+
+test('loadProgramExercises: missing or blank program match is a no-op without allocating UUIDs', () => {
+  const uuid = () => { throw new Error('unexpected UUID'); };
+  assert.equal(loadProgramExercises(draft, [], uuid), draft);
+  const unmatched = { ...draft, title: 'Other' };
+  assert.equal(loadProgramExercises(unmatched, [program], uuid), unmatched);
+  const blank = { ...draft, title: '  ' };
+  assert.equal(loadProgramExercises(blank, [{ ...program, name: '' }], uuid), blank);
 });

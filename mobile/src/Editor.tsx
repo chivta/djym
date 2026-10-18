@@ -8,7 +8,7 @@ import { t } from './i18n';
 import { colors, styles, TOUCH_TARGET } from './theme';
 import { Button, Card, Field } from './ui';
 
-import { acceptReps, exerciseSets, matchingProgram, normalizeName, plannedSets, previousWeights, weightHint } from './programs';
+import { acceptReps, exerciseSets, loadProgramExercises, matchingProgram, normalizeName, plannedSets, previousWeights, weightHint } from './programs';
 import type { Program } from './programs';
 
 const WEIGHT_INPUT_LENGTH = 7;
@@ -67,8 +67,15 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
       <Card>
         <Field label={t.date} value={draft.date} onChangeText={date => onChange({ ...draft, date })}
           placeholder={t.datePlaceholder} maxLength={DATE_INPUT_LENGTH} autoCorrect={false} autoCapitalize="none" keyboardType="numbers-and-punctuation" />
-        <Field label={t.optionalLabel(t.title)} value={draft.title} onChangeText={title => onChange(renameDraft(draft, title))}
-          placeholder={t.titlePlaceholder} maxLength={MAX_TEXT_LENGTH} />
+        <View style={styles.workoutNameRow}>
+          <View style={styles.workoutNameColumn}>
+            <Field label={t.optionalLabel(t.title)} value={draft.title} onChangeText={title => onChange(renameDraft(draft, title))}
+              placeholder={t.titlePlaceholder} maxLength={MAX_TEXT_LENGTH} />
+          </View>
+          <View style={styles.workoutNameColumn}>
+            <Button label={t.loadExercises} disabled={!program} onPress={() => onChange(loadProgramExercises(draft, programs, randomUUID))} />
+          </View>
+        </View>
         <Field label={t.optionalLabel(t.notes)} value={draft.notes} onChangeText={notes => onChange({ ...draft, notes })}
           placeholder={t.notesPlaceholder} maxLength={MAX_TEXT_LENGTH} multiline />
       </Card>
@@ -129,11 +136,6 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
             </View>}
           </View>;
         })}
-        {program?.entries.filter(e => !draft.exercises.some(actual => normalizeName(actual.name) === normalizeName(e.name))).map((entry, i) =>
-          <Pressable key={i} accessibilityRole="button" accessibilityLabel={t.acceptExercise(entry.name)} style={styles.exerciseHeader} onPress={() => {
-            const id = randomUUID(); setSelectedId(id);
-            onChange({ ...draft, exercises: [...draft.exercises, { id, name: entry.name, suggested: true, sets: plannedSets(entry.set_count, randomUUID) }] });
-          }}><Text style={[styles.exerciseName, { color: colors.muted }]}>{entry.name}</Text><Text style={styles.exercisePreview}>{t.programEntryPreview(entry.set_count, entry.target_reps)}</Text><Text style={styles.exerciseIndicator}>{t.addExerciseGlyph}</Text></Pressable>)}
         <Pressable accessibilityRole="button" accessibilityLabel={t.addExercise} onPress={addExercise}
           style={({ pressed }) => [styles.exerciseHeader, pressed && styles.pressed]}>
           <Text style={[styles.text, styles.flex]}>{t.addExercise}</Text>

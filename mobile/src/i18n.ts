@@ -19,7 +19,7 @@ export const t = {
   targetReps: 'Target reps · Optional',
   moveUp: 'Move exercise up',
   moveDown: 'Move exercise down',
-  acceptExercise: (name: string) => `Add suggested exercise ${name}`,
+  loadExercises: 'Load exercises',
   intake: (kcal?: number | null, protein?: number | null) => [kcal == null ? '' : `${kcal} kcal`, protein == null ? '' : `${protein}g protein`].filter(Boolean).join(' / '),
   appTitle: 'djym',
   tagline: 'Your workout log',
