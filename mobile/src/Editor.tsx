@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { applyDraftChange } from './editorDraft';
 import { existingSelection, exercisePreview, invalidExerciseId, toggleExercise } from './exerciseList';
 import { randomUUID } from 'expo-crypto';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -21,7 +22,7 @@ type EditorProps = {
   programs: Program[];
   onChange: (draft: Draft) => void;
   onBack: () => void;
-  onSave: () => void;
+  onSave: (draft: Draft) => void;
   onDiscard: () => void;
   onDelete?: () => void;
   status: React.ReactNode;
@@ -34,25 +35,35 @@ export function Editor(props: EditorProps) {
 
 function EditorSession({ draft, history, programs, onChange, onBack, onSave, onDiscard, onDelete, status, error }: EditorProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+  function change(update: (current: Draft) => Draft) {
+    const next = applyDraftChange(latestDraft.current, update);
+    latestDraft.current = next;
+    onChange(next);
+  }
   const program = matchingProgram(draft, programs);
   const selection = existingSelection(selectedId, draft.exercises);
   function save() {
     const invalidId = invalidExerciseId(draft);
     if (invalidId) setSelectedId(invalidId);
-    onSave();
+    onSave(latestDraft.current);
   }
   function updateExercise(id: string, update: Partial<DraftExercise>) {
-    onChange({ ...draft, exercises: draft.exercises.map(entry => entry.id === id ? { ...entry, ...update } : entry) });
+    change(current => ({ ...current, exercises: current.exercises.map(entry => entry.id === id ? { ...entry, ...update } : entry) }));
   }
   function updateSet(entry: DraftExercise, id: string, update: Partial<DraftSet>) {
-    updateExercise(entry.id, { sets: entry.sets.map(set => set.id === id ? { ...set, ...update } : set) });
+    const target = program?.entries.find(value => normalizeName(value.name) === normalizeName(entry.name));
+    change(current => ({ ...current, exercises: current.exercises.map(value => value.id === entry.id ? {
+      ...value, sets: exerciseSets(value, target?.set_count ?? 0).map(set => set.id === id ? { ...set, ...update } : set),
+    } : value) }));
   }
   function addExercise() {
     const id = randomUUID();
     setSelectedId(id);
-    onChange({ ...draft, exercises: [...draft.exercises, {
+    change(current => ({ ...current, exercises: [...current.exercises, {
       id, name: '', sets: plannedSets(1, randomUUID),
-    }] });
+    }] }));
   }
   return <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <View style={styles.header}>
@@ -65,18 +76,18 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
     </View>
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" automaticallyAdjustKeyboardInsets>
       <Card>
-        <Field label={t.date} value={draft.date} onChangeText={date => onChange({ ...draft, date })}
+        <Field label={t.date} value={draft.date} onChangeText={date => change(current => ({ ...current, date }))}
           placeholder={t.datePlaceholder} maxLength={DATE_INPUT_LENGTH} autoCorrect={false} autoCapitalize="none" keyboardType="numbers-and-punctuation" />
         <View style={styles.workoutNameRow}>
           <View style={styles.workoutNameColumn}>
-            <Field label={t.optionalLabel(t.title)} value={draft.title} onChangeText={title => onChange(renameDraft(draft, title))}
+            <Field label={t.optionalLabel(t.title)} value={draft.title} onChangeText={title => change(current => renameDraft(current, title))}
               placeholder={t.titlePlaceholder} maxLength={MAX_TEXT_LENGTH} />
           </View>
           <View style={styles.workoutNameColumn}>
-            <Button label={t.loadExercises} disabled={!program} onPress={() => onChange(loadProgramExercises(draft, programs, randomUUID))} />
+            <Button label={t.loadExercises} disabled={!program} onPress={() => change(current => loadProgramExercises(current, programs, randomUUID))} />
           </View>
         </View>
-        <Field label={t.optionalLabel(t.notes)} value={draft.notes} onChangeText={notes => onChange({ ...draft, notes })}
+        <Field label={t.optionalLabel(t.notes)} value={draft.notes} onChangeText={notes => change(current => ({ ...current, notes }))}
           placeholder={t.notesPlaceholder} maxLength={MAX_TEXT_LENGTH} multiline />
       </Card>
       <View style={styles.field}>
@@ -106,7 +117,7 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
                 <Pressable accessibilityRole="button" accessibilityLabel={t.removeExercise(exerciseIndex)} style={styles.removeButton}
                   onPress={() => {
                     setSelectedId(null);
-                    onChange({ ...draft, exercises: draft.exercises.filter(exercise => exercise.id !== entry.id) });
+                    change(current => ({ ...current, exercises: current.exercises.filter(exercise => exercise.id !== entry.id) }));
                   }}>
                   <Text style={styles.removeText}>{t.removeGlyph}</Text>
                 </Pressable>

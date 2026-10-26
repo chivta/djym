@@ -134,12 +134,11 @@ function WorkoutLog({ base }: { base: string }) {
     }
     change(workout ? toDraft(workout) : newDraft(randomUUID())); setEditing(true);
   }
-  function save() {
-    if (!draft) return;
-    const issue = validateDraft(draft);
+  function save(currentDraft: Draft) {
+    const issue = validateDraft(currentDraft);
     if (issue) { setError(validationText(issue)); return; }
     try {
-      store.current!.save(draft); reload(); setDraft(null); setEditing(false); setDraftSaved(true); setError(null); void sync.run();
+      store.current!.save(currentDraft); reload(); setDraft(null); setEditing(false); setDraftSaved(true); setError(null); void sync.run();
     } catch { setError(t.saveFailed); }
   }
   function discard() {
