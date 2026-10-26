@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { applyDraftChange } from './editorDraft';
+import { addDraftSet, removeDraftSet, updateDraftSet } from './editorActions';
+import { createHistoryHintSelector } from './editorHistory';
 import { existingSelection, exercisePreview, invalidExerciseId, toggleExercise } from './exerciseList';
 import { randomUUID } from 'expo-crypto';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
@@ -9,7 +10,7 @@ import { t } from './i18n';
 import { colors, styles, TOUCH_TARGET } from './theme';
 import { Button, Card, Field } from './ui';
 
-import { acceptReps, exerciseSets, loadProgramExercises, matchingProgram, normalizeName, plannedSets, previousWeights, weightHint } from './programs';
+import { acceptReps, exerciseSets, loadProgramExercises, matchingProgram, normalizeName, plannedSets, weightHint } from './programs';
 import type { Program } from './programs';
 
 const WEIGHT_INPUT_LENGTH = 7;
@@ -37,26 +38,29 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
+  const selectHistoryHints = useRef(createHistoryHintSelector()).current;
   function change(update: (current: Draft) => Draft) {
-    const next = applyDraftChange(latestDraft.current, update);
+    const next = update(latestDraft.current);
     latestDraft.current = next;
     onChange(next);
   }
   const program = matchingProgram(draft, programs);
   const selection = existingSelection(selectedId, draft.exercises);
+  const selectedExercise = draft.exercises.find(entry => entry.id === selection);
+  const selectedWeights = selectedExercise ? selectHistoryHints(draft, selectedExercise, history, selection) : [];
   function save() {
-    const invalidId = invalidExerciseId(draft);
+    const invalidId = invalidExerciseId(latestDraft.current);
     if (invalidId) setSelectedId(invalidId);
     onSave(latestDraft.current);
   }
   function updateExercise(id: string, update: Partial<DraftExercise>) {
     change(current => ({ ...current, exercises: current.exercises.map(entry => entry.id === id ? { ...entry, ...update } : entry) }));
   }
-  function updateSet(entry: DraftExercise, id: string, update: Partial<DraftSet>) {
-    const target = program?.entries.find(value => normalizeName(value.name) === normalizeName(entry.name));
-    change(current => ({ ...current, exercises: current.exercises.map(value => value.id === entry.id ? {
-      ...value, sets: exerciseSets(value, target?.set_count ?? 0).map(set => set.id === id ? { ...set, ...update } : set),
-    } : value) }));
+  function plannedCount(entry: DraftExercise) {
+    return program?.entries.find(value => normalizeName(value.name) === normalizeName(entry.name))?.set_count ?? 0;
+  }
+  function updateSet(entry: DraftExercise, id: string, update: (set: DraftSet) => DraftSet) {
+    change(current => updateDraftSet(current, entry.id, id, update, plannedCount));
   }
   function addExercise() {
     const id = randomUUID();
@@ -97,7 +101,7 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
       <View style={styles.exerciseList}>
         {draft.exercises.map((entry, exerciseIndex) => {
           const target = program?.entries.find(e => normalizeName(e.name) === normalizeName(entry.name));
-          const weights = previousWeights(draft, entry, history);
+          const weights = entry.id === selection ? selectedWeights : [];
           const shownSets = exerciseSets(entry, target?.set_count ?? 0);
           const displayed = { ...entry, sets: shownSets };
           const expanded = selection === entry.id;
@@ -132,17 +136,17 @@ function EditorSession({ draft, history, programs, onChange, onBack, onSave, onD
               </View>
               {shownSets.map((set, setIndex) => <View key={set.id} style={styles.row}>
                 <Text style={styles.setNumber}>{t.position(setIndex)}</Text>
-                <TextInput style={[styles.input, styles.setInput]} value={set.kg} onChangeText={kg => updateSet(displayed, set.id, { kg })}
+                <TextInput style={[styles.input, styles.setInput]} value={set.kg} onChangeText={kg => updateSet(displayed, set.id, current => ({ ...current, kg }))}
                   placeholder={weightHint(weights, setIndex)} placeholderTextColor={colors.muted} keyboardType="decimal-pad" accessibilityLabel={t.kgLabel(exerciseIndex, setIndex)} maxLength={WEIGHT_INPUT_LENGTH} selectTextOnFocus />
-                <TextInput style={[styles.input, styles.setInput]} value={set.reps} onChangeText={reps => updateSet(displayed, set.id, acceptReps(set, reps, weightHint(weights, setIndex)))}
+                <TextInput style={[styles.input, styles.setInput]} value={set.reps} onChangeText={reps => updateSet(displayed, set.id, current => acceptReps(current, reps, weightHint(weights, setIndex)))}
                   placeholder={target?.target_reps == null ? '' : String(target.target_reps)} placeholderTextColor={colors.muted} keyboardType="number-pad" accessibilityLabel={t.repsLabel(exerciseIndex, setIndex)} maxLength={REPS_INPUT_LENGTH} selectTextOnFocus />
                 <Pressable style={styles.removeButton} accessibilityRole="button" accessibilityLabel={t.removeSet(exerciseIndex, setIndex)}
-                  onPress={() => updateExercise(entry.id, { sets: shownSets.filter(value => value.id !== set.id) })}>
+                  onPress={() => change(current => removeDraftSet(current, entry.id, set.id, plannedCount))}>
                   <Text style={styles.removeText}>{t.removeGlyph}</Text>
                 </Pressable>
               </View>)}
               <Button label={t.addSet} secondary onPress={() => {
-                updateExercise(entry.id, { sets: [...shownSets, ...plannedSets(1, randomUUID)] });
+                change(current => addDraftSet(current, entry.id, plannedCount, randomUUID));
               }} />
             </View>}
           </View>;

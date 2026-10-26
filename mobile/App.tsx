@@ -8,7 +8,9 @@ import { Alert, AppState, BackHandler, FlatList, Linking, Pressable, Text, View 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Programs } from './src/Programs';
 import { createProgramStore } from './src/programStore';
+import { loadProgramSnapshot } from './src/editorPrograms';
 import type { ProgramStore } from './src/programStore';
+import type { Program } from './src/programs';
 import { Editor } from './src/Editor';
 import { t, validationText } from './src/i18n';
 import { newDraft, setCount, toDraft, validateDraft } from './src/model';
@@ -36,6 +38,7 @@ function WorkoutLog({ base }: { base: string }) {
   const [session, setSession] = useState<Session | null>(null);
   const [login, setLogin] = useState<Login | null>(null);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [legacy, setLegacy] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -51,6 +54,7 @@ function WorkoutLog({ base }: { base: string }) {
     try {
       const data = store.current.load();
       setWorkouts(data.workouts); setRows(store.current.rows());
+      setPrograms(loadProgramSnapshot(programStore.current));
       // Draft content belongs to the editor; sync never replaces it.
       const old = store.current.legacy(); setLegacy(!!old.workouts.length || !!old.draft);
     } catch { setError(t.loadFailed); }
@@ -58,7 +62,7 @@ function WorkoutLog({ base }: { base: string }) {
   function activate(next: Session | null) {
     sync.activate(null);
     setProgramMenu(false); setEditing(false); setError(null); setSyncError(null); setDraftSaved(true);
-    setSession(next); setWorkouts([]); setRows([]); setDraft(null);
+    setSession(next); setWorkouts([]); setRows([]); setPrograms([]); setDraft(null);
     if (!next) { store.current = null; programStore.current = null; return; }
     const scoped = createAccountStore(database.current!, accountKey(next));
     store.current = scoped;
@@ -198,9 +202,9 @@ function WorkoutLog({ base }: { base: string }) {
   if (!session) return <View style={styles.content}><Text style={styles.heading}>{t.appTitle}</Text><Text style={styles.muted}>{t.signedOut}</Text>{authControls}</View>;
   if (programMenu && programStore.current) return <View style={styles.flex}>
     {syncError && <Text style={styles.error}>{t.errors[syncError]}</Text>}
-    <Programs key={accountKey(session)} store={programStore.current} onBack={() => setProgramMenu(false)} onMutation={() => { reload(); void sync.run(); }} onResolve={sync.resolveProgram} />
+    <Programs key={accountKey(session)} store={programStore.current} onBack={() => setProgramMenu(false)} onMutation={() => { reload(); void sync.run(); }} onResolve={id => sync.resolveProgram(id).then(() => { reload(); })} />
   </View>;
-  if (editing && draft) return <Editor draft={draft} history={workouts} programs={programStore.current?.load() ?? []} onChange={change} onSave={save} onDiscard={discard}
+  if (editing && draft) return <Editor draft={draft} history={workouts} programs={programs} onChange={change} onSave={save} onDiscard={discard}
     onDelete={workouts.some(w => w.id === draft.id) ? remove : undefined} error={error} status={draftStatus}
     onBack={() => { setEditing(false); setError(null); }} />;
   return <FlatList data={workouts} keyExtractor={w => w.id} contentContainerStyle={styles.content}
