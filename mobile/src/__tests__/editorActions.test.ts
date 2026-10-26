@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { addDraftSet, removeDraftSet, updateDraftSet } from '../editorActions.ts';
 import { createHistoryHintSelector } from '../editorHistory.ts';
-import { loadProgramSnapshot } from '../editorPrograms.ts';
 import { newDraft } from '../model.ts';
 import { acceptReps } from '../programs.ts';
 import type { Draft, Workout } from '../model.ts';
@@ -50,10 +49,6 @@ test('selected history hints reuse unchanged semantic inputs and invalidate chan
   const draft = fixture();
   const history: Workout[] = [];
   let calculations = 0;
-  let programLoads = 0;
-  let programRows = [] as { id: string; name: string; entries: { name: string; set_count: number; target_reps: number | null }[] }[];
-  const store = { load() { programLoads++; return programRows; } };
-  const initialProgramSnapshot = loadProgramSnapshot(store);
   const selector = createHistoryHintSelector(() => {
     calculations++;
     return [];
@@ -63,18 +58,9 @@ test('selected history hints reuse unchanged semantic inputs and invalidate chan
   selector({ ...draft, notes: 'typing' }, exercise, history, exercise.id);
   for (let i = 0; i < 100; i++) selector({ ...draft, notes: `typing-${i}` }, exercise, history, exercise.id);
   assert.equal(calculations, 1);
-  assert.equal(programLoads, 1);
-  assert.equal(loadProgramSnapshot(null).length, 0);
-  assert.deepEqual(initialProgramSnapshot, []);
   selector({ ...draft, ...{ date: '2026-10-12' } }, exercise, history, exercise.id);
   selector(draft, { ...exercise, name: 'Incline bench' }, history, exercise.id);
   selector(draft, exercise, [...history], exercise.id);
   selector(draft, exercise, history, 'e2');
   assert.equal(calculations, 5);
-  programRows = [{ id: 'p2', name: 'Push', entries: [{ name: 'Bench', set_count: 4, target_reps: 8 }] }];
-  assert.equal(loadProgramSnapshot(store)[0].id, 'p2');
-  assert.equal(programLoads, 2);
-  const otherAccountStore = { load() { programLoads++; return []; } };
-  assert.deepEqual(loadProgramSnapshot(otherAccountStore), []);
-  assert.equal(programLoads, 3);
 });

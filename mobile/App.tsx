@@ -8,7 +8,6 @@ import { Alert, AppState, BackHandler, FlatList, Linking, Pressable, Text, View 
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Programs } from './src/Programs';
 import { createProgramStore } from './src/programStore';
-import { loadProgramSnapshot } from './src/editorPrograms';
 import type { ProgramStore } from './src/programStore';
 import type { Program } from './src/programs';
 import { Editor } from './src/Editor';
@@ -54,7 +53,7 @@ function WorkoutLog({ base }: { base: string }) {
     try {
       const data = store.current.load();
       setWorkouts(data.workouts); setRows(store.current.rows());
-      setPrograms(loadProgramSnapshot(programStore.current));
+      setPrograms(programStore.current?.load() ?? []);
       // Draft content belongs to the editor; sync never replaces it.
       const old = store.current.legacy(); setLegacy(!!old.workouts.length || !!old.draft);
     } catch { setError(t.loadFailed); }
