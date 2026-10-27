@@ -30,7 +30,14 @@ function hookRuntime() {
       useState(initial: unknown) { const i = index++; if (!(i in hooks)) hooks[i] = initial; return [hooks[i], (next: unknown) => { hooks[i] = typeof next === 'function' ? (next as (value: unknown) => unknown)(hooks[i]) : next; }] as const; },
       useEffect(effect: () => void | (() => void), deps?: unknown[]) { const i = index++; const prior = hooks[i] as unknown[] | undefined; if (!deps || !prior || deps.some((value, n) => !Object.is(value, prior[n]))) { hooks[i] = deps ?? []; effects.push(effect); } },
       useCallback(callback: unknown) { index++; return callback; },
-      useMemo(factory: () => unknown) { index++; return factory(); },
+      useMemo(factory: () => unknown, deps?: unknown[]) {
+        const i = index++;
+        const prior = hooks[i] as { deps: unknown[] | undefined; value: unknown } | undefined;
+        if (!deps || !prior || !prior.deps || deps.length !== prior.deps.length || deps.some((value, n) => !Object.is(value, prior.deps![n]))) {
+          const value = factory(); hooks[i] = { deps: deps?.slice(), value }; return value;
+        }
+        return prior.value;
+      },
       memo(component: unknown) { return component; },
     },
   };
@@ -47,13 +54,13 @@ function dbAdapter(sqlite: DatabaseSync, counts?: { reads: number }) {
 function transpile(path: string, append = '') {
   return ts.transpileModule(readFileSync(path, 'utf8') + append, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
 }
-function loadChatScreen(runtime: ReturnType<typeof hookRuntime>) {
+function loadChatScreen(runtime: ReturnType<typeof hookRuntime>, buildIndex = buildHistorySuggestionIndex) {
   const js = transpile(join(root, 'src/ChatScreen.tsx'));
   const module = { exports: {} as Record<string, any> };
   const stubs: Record<string, unknown> = {
     react: runtime.react, 'react/jsx-runtime': jsxRuntime, 'expo-crypto': { randomUUID: () => 'chat-id' },
     'react-native': { ...Boundaries, Platform: { OS: 'android' } }, './model': { MAX_TEXT_LENGTH }, './programs': {}, './workoutMessage': { applyWorkoutMessage, formatWorkoutMessage },
-    './messageSuggestions': { buildHistorySuggestionIndex }, './ui': { Button: 'Button', Card: 'Card' }, './theme': { styles, colors }, './i18n': { t },
+    './messageSuggestions': { buildHistorySuggestionIndex: buildIndex }, './ui': { Button: 'Button', Card: 'Card' }, './theme': { styles, colors }, './i18n': { t },
     './chatInput': { insertAtSelection, sendOnce },
   };
   new Function('require', 'module', 'exports', js)((name: string) => { if (!(name in stubs)) throw new Error(`Unexpected ChatScreen dependency ${name}`); return stubs[name]; }, module, module.exports);
@@ -279,6 +286,86 @@ test('production ChatScreen keyboard props, selection suggestion, status refresh
   chatRuntimeStandalone.reset(); tree = StandaloneChatScreen(props); nodes = visit(tree);
   const list = nodes.find(node => node.type === 'FlatList')!; const rowElement = list.props.renderItem({ item: workout });
   assert.ok(visit(rowElement.type(rowElement.props)).some(node => node.type === 'Text' && node.props.children === t.statusSynced));
+});
+
+test('past-date weight suggestions use the date currently typed in the production composer', () => {
+  const runtime = hookRuntime();
+  const Screen = loadChatScreen(runtime);
+  const exercise = (kg: number) => [{ id: `e-${kg}`, name: 'Bench', sets: [{ id: `s-${kg}`, kg, reps: 8 }] }];
+  const draft = { ...newDraft('editing'), title: 'upper', date: '2026-01-10', exercises: [], messageText: '2026-01-02 Upper\nBench 60-8' };
+  const workouts = [
+    { ...newDraft('older'), title: 'Upper', date: '2026-01-01', exercises: exercise(40) },
+    { ...newDraft('future-for-message'), title: 'Upper', date: '2026-01-09', exercises: exercise(90) },
+  ];
+  const props = { workouts, programs: [], pending: 0, draft, statusForWorkout: () => t.statusLocal,
+    error: null, status: null, onDraftText: () => true, onRetryDraft: () => true, onSend: () => false,
+    onEdit() {}, onStructured() {}, account: null };
+  runtime.reset();
+  let nodes = visit(Screen(props));
+  nodes.find(node => node.type === 'Button' && node.props.label === t.chatSuggestWeights)!.props.onPress();
+  runtime.reset();
+  nodes = visit(Screen(props));
+  const weights = nodes.find(node => node.type === 'FlatList' && node.props.horizontal && node.props.data.every((value: unknown) => typeof value === 'number'));
+  assert.deepEqual(weights?.props.data, [40], 'Jan 9 is future history for the typed Jan 2 message');
+});
+
+test('production history index invalidates on date, remote ID and history identity changes but reuses stable context', () => {
+  const runtime = hookRuntime();
+  let builds = 0;
+  const countedBuilder = (...args: Parameters<typeof buildHistorySuggestionIndex>) => { builds++; return buildHistorySuggestionIndex(...args); };
+  const Screen = loadChatScreen(runtime, countedBuilder);
+  const exercise = (id: string, kg: number) => [{ id: `e-${id}`, name: 'Bench', sets: [{ id: `s-${id}`, kg, reps: 8 }] }];
+  const workouts = [
+    { ...newDraft('remote-a'), title: 'Upper', date: '2026-01-01', remoteId: 123, exercises: exercise('a', 40) },
+    { ...newDraft('remote-b'), title: 'Upper', date: '2026-01-01', remoteId: 456, exercises: exercise('b', 50) },
+    { ...newDraft('later'), title: 'Upper', date: '2026-01-09', remoteId: 456, exercises: exercise('later', 90) },
+  ];
+  const draft = { ...newDraft('editing'), title: 'upper', date: '2026-01-10', remoteId: 123, messageText: '2026-01-10 upper\nBench 60-8', exercises: [] };
+  const props = { workouts, programs: [], pending: 0, draft, statusForWorkout: () => t.statusLocal,
+    error: null, status: null, onDraftText: () => true, onRetryDraft: () => true, onSend: () => false,
+    onEdit() {}, onStructured() {}, account: null };
+  function render() { runtime.reset(); return visit(Screen(props)); }
+  function suggest(nodes: ReturnType<typeof visit>) {
+    nodes.find(node => node.type === 'Button' && node.props.label === t.chatSuggestWeights)!.props.onPress();
+    runtime.reset(); nodes = visit(Screen(props));
+    return nodes.find(node => node.type === 'FlatList' && node.props.horizontal && node.props.data.every((value: unknown) => typeof value === 'number'))?.props.data;
+  }
+
+  let nodes = render(); assert.equal(builds, 1);
+  assert.deepEqual(suggest(nodes), [90], 'January 10 includes January 9 history');
+  nodes = render(); assert.equal(builds, 1, 'button lookups reuse the unchanged draft/history index');
+
+  props.draft = { ...props.draft, date: '2026-01-02', messageText: '2026-01-02 upper\nBench 60-8' };
+  nodes = render(); assert.equal(builds, 2, 'draft date invalidates the memoized index');
+  nodes.find(node => node.type === 'TextInput')!.props.onChangeText('2026-01-02 upper\nBench 60-8');
+  assert.deepEqual(suggest(nodes), [50], 'January 2 excludes future January 9 history');
+
+  props.draft = { ...props.draft, date: '2026-01-10', remoteId: 456 };
+  nodes = render(); assert.equal(builds, 3, 'draft remote ID invalidates the memoized index');
+  nodes.find(node => node.type === 'TextInput')!.props.onChangeText('2026-01-10 upper\nBench 60-8');
+  assert.deepEqual(suggest(nodes), [40], 'history with the active remote ID is excluded');
+
+  props.workouts = [...props.workouts];
+  render(); assert.equal(builds, 4, 'history array identity invalidates the memoized index');
+});
+
+test('keystrokes reuse the real history index for unchanged context', () => {
+  const runtime = hookRuntime();
+  let builds = 0;
+  const countedBuilder = (...args: Parameters<typeof buildHistorySuggestionIndex>) => { builds++; return buildHistorySuggestionIndex(...args); };
+  const Screen = loadChatScreen(runtime, countedBuilder);
+  const draft = { ...newDraft('editing'), title: 'Upper', date: '2026-01-02', messageText: '', exercises: [] };
+  const workouts = [{ ...newDraft('history'), title: 'Upper', date: '2026-01-01', exercises: [{ id: 'e', name: 'Bench', sets: [{ id: 's', kg: 40, reps: 8 }] }] }];
+  const props = { workouts, programs: [], pending: 0, draft, statusForWorkout: () => t.statusLocal,
+    error: null, status: null, onDraftText: () => true, onRetryDraft: () => true, onSend: () => false,
+    onEdit() {}, onStructured() {}, account: null };
+  runtime.reset(); let nodes = visit(Screen(props)); assert.equal(builds, 1);
+  const input = nodes.find(node => node.type === 'TextInput')!;
+  for (const value of ['B', 'Be', 'Bench 60-8']) {
+    input.props.onChangeText(value);
+    runtime.reset(); nodes = visit(Screen(props));
+    assert.equal(builds, 1, 'ordinary composer typing does not rescan or re-sort history');
+  }
 });
 
 test('actual App keystroke callbacks do not render App or read/sort history/database', async tcase => {

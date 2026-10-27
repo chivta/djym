@@ -36,7 +36,11 @@ export function ChatScreen({ workouts, programs, pending, draft, error, status, 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showPrograms, setShowPrograms] = useState(false);
   const [weightSuggestions, setWeightSuggestions] = useState<number[]>([]);
-  const suggestions = useMemo(() => draft ? buildHistorySuggestionIndex(draft, workouts) : null, [draft?.id, draft?.title, workouts]);
+  const suggestionContext = useMemo(() => draft ? {
+    id: draft.id, remoteId: draft.remoteId, title: draft.title, date: draft.date, workouts,
+    index: buildHistorySuggestionIndex(draft, workouts),
+  } : null, [draft?.id, draft?.remoteId, draft?.title, draft?.date, workouts]);
+  const suggestions = suggestionContext?.index ?? null;
   const accept = useCallback((value: string) => {
     const inserted = insertAtSelection(textRef.current, selectionRef.current, value);
     textRef.current = inserted.text; setText(inserted.text); setDraftWriteOk(onDraftText(inserted.text));
@@ -59,7 +63,8 @@ export function ChatScreen({ workouts, programs, pending, draft, error, status, 
         const parsed = applyWorkoutMessage(textRef.current, base);
         if (!parsed.ok || !parsed.draft.exercises.length) { setWeightSuggestions([]); return; }
         const latest = parsed.draft.exercises.at(-1)!;
-        const index = draft && parsed.draft.title === draft.title ? suggestions : buildHistorySuggestionIndex(parsed.draft, workouts);
+        const sameHistoryContext = suggestionContext && parsed.draft.id === suggestionContext.id && parsed.draft.remoteId === suggestionContext.remoteId && parsed.draft.title === suggestionContext.title && parsed.draft.date === suggestionContext.date && suggestionContext.workouts === workouts;
+        const index = sameHistoryContext ? suggestionContext.index : buildHistorySuggestionIndex(parsed.draft, workouts);
         setWeightSuggestions(index?.weightsFor(latest) ?? []);
       }} />
       {!!programs.length && <><Button label={showPrograms ? t.chatHidePrograms : t.chatShowPrograms} secondary onPress={() => setShowPrograms(value => !value)} />{showPrograms && <View style={styles.field}>{programs.map(program => <Pressable key={program.id} accessibilityRole="button" accessibilityLabel={t.chatAppendProgram(program.name)} android_ripple={{ color: colors.border }} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]} onPress={() => {
