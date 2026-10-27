@@ -1,21 +1,23 @@
 import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { randomUUID } from 'expo-crypto';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import type { Draft, Workout } from './model';
-import { formatWorkoutMessage } from './workoutMessage';
+import type { Program } from './programs';
+import { applyWorkoutMessage, formatWorkoutMessage } from './workoutMessage';
 import { buildHistorySuggestionIndex } from './messageSuggestions';
 import { Button, Card } from './ui';
 import { styles, colors } from './theme';
 import { t } from './i18n';
 import { insertAtSelection, sendOnce } from './chatInput';
 
-type Props = { workouts: Workout[]; pending: number; draft: Draft | null; error: string | null; status: React.ReactNode; onDraftText(text: string): boolean; onSend(text: string): boolean; onEdit(workout: Workout): void; onPrograms?: () => void; onStructured(): void; account: React.ReactNode; };
-const Message = memo(function Message({ item, onPress }: { item: Workout; onPress: (item: Workout) => void }) {
+type Props = { workouts: Workout[]; programs: Program[]; pending: number; draft: Draft | null; statusForWorkout(id: string): string; error: string | null; status: React.ReactNode; onDraftText(text: string): boolean; onSend(text: string): boolean; onEdit(workout: Workout): void; onPrograms?: () => void; onStructured(): void; account: React.ReactNode; };
+const Message = memo(function Message({ item, onPress, delivery }: { item: Workout; onPress: (item: Workout) => void; delivery: string }) {
   const body = formatWorkoutMessage({ ...item, exercises: item.exercises.map(e => ({ ...e, sets: e.sets.map(s => ({ ...s, kg: String(s.kg), reps: String(s.reps) })) })) });
   return <Pressable accessibilityRole="button" accessibilityLabel={`${item.date}, ${item.title || t.untitled}. Edit workout`} onPress={() => onPress(item)} android_ripple={{ color: colors.border }} style={({ pressed }) => pressed && styles.pressed}>
-    <Card><Text style={styles.title}>{item.date} · {item.title || t.untitled}</Text><Text style={styles.text}>{body.text}</Text>{item.notes ? <Text style={styles.muted}>{item.notes}</Text> : null}</Card>
+    <Card><Text style={styles.title}>{item.date} · {item.title || t.untitled}</Text><Text style={styles.eyebrow}>{delivery}</Text><Text style={styles.text}>{body.text}</Text>{item.notes ? <Text style={styles.muted}>{item.notes}</Text> : null}</Card>
   </Pressable>;
 });
-export function ChatScreen({ workouts, pending, draft, error, status, onDraftText, onSend, onEdit, onPrograms, onStructured, account }: Props) {
+export function ChatScreen({ workouts, programs, pending, draft, error, status, statusForWorkout, onDraftText, onSend, onEdit, onPrograms, onStructured, account }: Props) {
   const initial = draft?.messageText ?? '';
   const [text, setText] = useState(initial);
   const textRef = useRef(initial);
@@ -23,10 +25,14 @@ export function ChatScreen({ workouts, pending, draft, error, status, onDraftTex
   const sending = useRef(false);
   const editRef = useRef(onEdit); editRef.current = onEdit;
   const stableEdit = useCallback((item: Workout) => editRef.current(item), []);
+  const statusRef = useRef(statusForWorkout); statusRef.current = statusForWorkout;
+  const stableStatus = useCallback((id: string) => statusRef.current(id), []);
   const [selection, setSelection] = useState({ start: initial.length, end: initial.length });
   const selectionRef = useRef(selection);
   const [draftWriteOk, setDraftWriteOk] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showPrograms, setShowPrograms] = useState(false);
+  const [weightSuggestions, setWeightSuggestions] = useState<number[]>([]);
   const suggestions = useMemo(() => draft ? buildHistorySuggestionIndex(draft, workouts) : null, [draft?.id, draft?.title, workouts]);
   const accept = useCallback((value: string) => {
     const inserted = insertAtSelection(textRef.current, selectionRef.current, value);
@@ -38,13 +44,29 @@ export function ChatScreen({ workouts, pending, draft, error, status, onDraftTex
     if (!textRef.current.trim()) return;
     sendOnce(sending, () => { if (onSend(textRef.current)) { textRef.current = ''; setText(''); selectionRef.current = { start: 0, end: 0 }; setSelection(selectionRef.current); } });
   }, [onSend]);
-  const renderItem = useCallback(({ item }: { item: Workout }) => <Message item={item} onPress={stableEdit} />, [stableEdit]);
+  const renderItem = useCallback(({ item }: { item: Workout }) => <Message item={item} onPress={stableEdit} delivery={stableStatus(item.id)} />, [stableEdit, stableStatus]);
   return <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <View style={styles.header}><View style={styles.between}><Text style={styles.brand}>{t.appTitle}</Text><Text style={styles.eyebrow}>{t.localBadge}</Text></View>{account}<View style={styles.row}>{onPrograms && <Button label={t.programs} secondary onPress={onPrograms} />}<Text style={styles.muted}>{t.pending(pending)}</Text></View>{draft && <Button label="Advanced structured editor" secondary onPress={onStructured} />}</View>
     <FlatList data={workouts} keyExtractor={item => item.id} renderItem={renderItem} keyboardShouldPersistTaps="always" keyboardDismissMode="on-drag" contentContainerStyle={styles.content} ListEmptyComponent={<View style={styles.empty}><Text style={styles.title}>{t.emptyTitle}</Text><Text style={styles.muted}>Try: Bench press 60-8 -7 -6</Text></View>} />
     <View style={styles.composer}>
       {status}{!draftWriteOk && <Text style={styles.error} accessibilityLiveRegion="polite">Draft could not be saved. Keep the app open and retry.</Text>}{draft?.messageText && !text && <Text style={styles.muted}>Unfinished message saved locally. Resume typing below.</Text>}
-      {!!suggestions?.recentExercises().length && <><Button label={showSuggestions ? 'Hide suggestions' : 'Show exercise suggestions'} secondary onPress={() => setShowSuggestions(value => !value)} />{showSuggestions && <FlatList horizontal keyboardShouldPersistTaps="always" data={suggestions.recentExercises().slice(0, 5)} keyExtractor={item => item.name} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`Insert ${item.name}`} android_ripple={{ color: colors.border }} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]} onPress={() => accept(item.name)}><Text style={styles.text}>{item.name}</Text></Pressable>} />}</> }
+      {!!suggestions?.recentExercises().length && <><Button label={showSuggestions ? 'Hide suggestions' : 'Show exercise suggestions'} secondary onPress={() => setShowSuggestions(value => !value)} />{showSuggestions && <FlatList horizontal keyboardShouldPersistTaps="always" data={suggestions.recentExercises().slice(0, 5)} keyExtractor={item => item.name} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`Insert ${item.name}`} android_ripple={{ color: colors.border }} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]} onPress={() => accept(item.name)}><Text style={styles.text}>{item.name}</Text></Pressable>} />}</>}
+      <Button label="Suggest previous weights" secondary onPress={() => {
+        const base = draft ?? { id: randomUUID(), date: new Date().toISOString().slice(0, 10), title: '', notes: '', exercises: [] };
+        const parsed = applyWorkoutMessage(textRef.current, base);
+        if (!parsed.ok || !parsed.draft.exercises.length) { setWeightSuggestions([]); return; }
+        const latest = parsed.draft.exercises.at(-1)!;
+        setWeightSuggestions(buildHistorySuggestionIndex(parsed.draft, workouts).weightsFor(latest));
+      }} />
+      {!!programs.length && <><Button label={showPrograms ? 'Hide program templates' : 'Show program templates'} secondary onPress={() => setShowPrograms(value => !value)} />{showPrograms && <View style={styles.field}>{programs.map(program => <Pressable key={program.id} accessibilityRole="button" accessibilityLabel={`Append ${program.name} template`} android_ripple={{ color: colors.border }} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]} onPress={() => {
+        const existing = textRef.current.toLocaleLowerCase();
+        const lines = program.entries.filter(entry => !existing.includes(entry.name.toLocaleLowerCase())).map(entry => `${entry.name} ${Array.from({ length: entry.set_count }, () => 'W-').join(' ')}`).join('\n');
+        if (!lines) return;
+        const prefix = textRef.current && !textRef.current.endsWith('\n') ? '\n' : '';
+        const cursor = textRef.current.length; selectionRef.current = { start: cursor, end: cursor };
+        accept(`${prefix}${lines}`);
+      }}><Text style={styles.text}>{program.name}</Text></Pressable>)}</View>}</>}
+      {!!weightSuggestions.length && <FlatList horizontal keyboardShouldPersistTaps="always" data={weightSuggestions} keyExtractor={(value, index) => `${value}-${index}`} renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`Insert previous weight ${item} kilograms`} android_ripple={{ color: colors.border }} style={({ pressed }) => [styles.suggestion, pressed && styles.pressed]} onPress={() => accept(`${item}-`)}><Text style={styles.text}>{item} kg</Text></Pressable>} />}
       <TextInput ref={input} value={text} onChangeText={setValue} onSelectionChange={event => { selectionRef.current = event.nativeEvent.selection; setSelection(event.nativeEvent.selection); }} selection={selection} multiline maxLength={20000} placeholder="Workout message…" placeholderTextColor={colors.muted} accessibilityLabel="Workout message" style={[styles.input, styles.composerInput]} textAlignVertical="top" returnKeyType="default" blurOnSubmit={false} />
       <View style={styles.row}><Text style={[styles.muted, styles.flex]}>Exercise 60-8 -7 · headers support | note</Text><Button label="Send" disabled={!text.trim()} onPress={send} /></View>
       {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}

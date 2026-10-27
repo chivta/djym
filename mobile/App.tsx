@@ -12,7 +12,7 @@ import type { ProgramStore } from './src/programStore';
 import type { Program } from './src/programs';
 import { Editor } from './src/Editor';
 import { ChatScreen } from './src/ChatScreen';
-import { applyWorkoutMessage } from './src/workoutMessage';
+import { createChatMessageHandlers } from './src/chatInput';
 import { createAutoSync } from './src/autoSync';
 import * as Network from 'expo-network';
 import { t, validationText } from './src/i18n';
@@ -144,22 +144,18 @@ function WorkoutLog({ base }: { base: string }) {
     latestDraft.current = next; setDraft(next); setError(null);
     try { (store.current ?? legacyStore.current)!.writeDraft(next); setDraftSaved(true); } catch { setDraftSaved(false); }
   }
-  function messageDraft(text: string): boolean {
-    const current = latestDraft.current ?? draft ?? newDraft(randomUUID());
-    const next = { ...current, messageText: text }; latestDraft.current = next;
-    try { (store.current ?? legacyStore.current)!.writeDraft(next); return true; } catch { return false; }
-  }
-  function sendMessage(text: string): boolean {
-    const current = latestDraft.current ?? draft ?? newDraft(randomUUID());
-    const parsed = applyWorkoutMessage(text, current);
-    if (!parsed.ok) { setError(`${parsed.issue.text}${parsed.issue.token ? `: ${parsed.issue.token}` : ''}`); return false; }
-    try {
-      const target = store.current ?? legacyStore.current; if (!target) throw new Error('storage unavailable');
-      target.save(parsed.draft); setError(null); setDraft(null); latestDraft.current = null; setDraftSaved(true); reload();
+  const messageHandlers = createChatMessageHandlers({
+    current: () => latestDraft.current ?? draft,
+    setCurrent: value => { latestDraft.current = value; },
+    createDraft: () => newDraft(randomUUID()),
+    writeDraft: value => { (store.current ?? legacyStore.current)!.writeDraft(value); },
+    saveDraft: value => { const target = store.current ?? legacyStore.current; if (!target) throw new Error('storage unavailable'); target.save(value); },
+    onIssue: setError,
+    onSaved: () => {
+      setError(null); setDraft(null); setDraftSaved(true); reload();
       if (store.current) autoSync.current.request();
-      return true;
-    } catch { setError(t.saveFailed); return false; }
-  }
+    },
+  });
   function openStructured() {
     if (draft) { latestDraft.current = draft; setEditing(true); return; }
     change(newDraft(randomUUID())); setEditing(true);
@@ -233,7 +229,7 @@ function WorkoutLog({ base }: { base: string }) {
     <Text style={styles.heading}>{t.appTitle}</Text><Text style={phase === 'failed' ? styles.error : styles.muted}>{phase === 'failed' ? t.loadFailed : t.loading}</Text>
     {phase === 'failed' && <Button label={t.retry} onPress={() => { void load(); }} />}
   </View>;
-  if (!session) return <ChatScreen workouts={workouts} pending={0} draft={draft} error={error} status={draftStatus} onDraftText={messageDraft} onSend={sendMessage} onEdit={open} onPrograms={() => {}} onStructured={openStructured} account={<>{authControls}<Text style={styles.muted}>{t.signedOut}</Text>{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
+  if (!session) return <ChatScreen workouts={workouts} programs={[]} pending={0} draft={draft} statusForWorkout={() => 'On this device'} error={error} status={draftStatus} onDraftText={messageHandlers.onText} onSend={messageHandlers.onSend} onEdit={open} onPrograms={() => {}} onStructured={openStructured} account={<>{authControls}<Text style={styles.muted}>{t.signedOut}</Text>{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
   if (programMenu && programStore.current) return <View style={styles.flex}>
     {syncError && <Text style={styles.error}>{t.errors[syncError]}</Text>}
     <Programs key={accountKey(session)} store={programStore.current} onBack={() => setProgramMenu(false)} onMutation={() => { reload(); void sync.run(); }} onResolve={id => sync.resolveProgram(id).then(() => { reload(); })} />
@@ -241,7 +237,7 @@ function WorkoutLog({ base }: { base: string }) {
   if (editing && draft) return <Editor draft={draft} history={workouts} programs={programs} onChange={change} onSave={save} onDiscard={discard}
     onDelete={workouts.some(w => w.id === draft.id) ? remove : undefined} error={error} status={draftStatus}
     onBack={() => { setEditing(false); setError(null); }} />;
-  if (!editing) return <ChatScreen workouts={workouts} pending={rows.filter(row => row.pending).length} draft={draft} error={error} status={draftStatus} onDraftText={messageDraft} onSend={sendMessage} onEdit={open} onPrograms={() => setProgramMenu(true)} onStructured={openStructured} account={<>{authControls}{rows.filter(row => row.error).map(row => <View key={row.workout.id} style={styles.field}><Text style={styles.error}>{t.errors[row.error as ErrorCode] ?? t.errors.request_failed}</Text><Button label={t.conflictAction} onPress={() => resolve(row.workout.id)} /></View>)}{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
+  if (!editing) return <ChatScreen workouts={workouts} programs={programs} pending={rows.filter(row => row.pending).length} draft={draft} statusForWorkout={id => { const row = rows.find(value => value.workout.id === id); return !row ? 'On this device' : row.error ? 'Conflict' : row.pending ? 'Pending sync' : 'Synced'; }} error={error} status={draftStatus} onDraftText={messageHandlers.onText} onSend={messageHandlers.onSend} onEdit={open} onPrograms={() => setProgramMenu(true)} onStructured={openStructured} account={<>{authControls}{rows.filter(row => row.error).map(row => <View key={row.workout.id} style={styles.field}><Text style={styles.error}>{t.errors[row.error as ErrorCode] ?? t.errors.request_failed}</Text><Button label={t.conflictAction} onPress={() => resolve(row.workout.id)} /></View>)}{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
   return <FlatList data={workouts} keyExtractor={w => w.id} contentContainerStyle={styles.content}
     ListHeaderComponent={<View style={styles.field}>
       <View style={styles.between}><Text style={styles.brand}>{t.appTitle}</Text><Text style={styles.eyebrow}>{t.localBadge}</Text></View>
