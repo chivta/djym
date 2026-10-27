@@ -56,6 +56,58 @@ test('editing preserves IDs/order by aliases and metadata; output identifies non
   assert.ok(formatted.reasons.some(reason => reason.includes('metadata')));
 });
 
+test('message identity allocation survives reorder, removal, additions, duplicates, and reserved IDs', () => {
+  const existing: Draft = { ...newDraft('identity'), date: '2026-10-26', title: 'Push', exercises: [
+    { id: 'message-exercise:0', name: 'Squat', sets: [{ id: 'message-set:0:0', kg: '80', reps: '8' }] },
+    { id: 'message-exercise:1', name: 'Bench', sets: [{ id: 'message-set:1:0', kg: '60', reps: '8' }] },
+  ] };
+  const text = '26.10.2026 Push\nBench 60-8\nOverhead press 40-6';
+  const first = applyWorkoutMessage(text, existing, now); assert.equal(first.ok, true); if (!first.ok) return;
+  assert.deepEqual(first.draft.exercises.map(entry => entry.id), ['message-exercise:1', 'message-exercise:1:1']);
+  assert.equal(first.draft.exercises[0].sets[0].id, 'message-set:1:0');
+  assert.deepEqual(first.draft.exercises.map(entry => entry.name), ['Bench', 'Overhead press']);
+  assert.deepEqual(applyWorkoutMessage(text, existing, now), first, 'same context allocates deterministic IDs');
+  const allIds = first.draft.exercises.flatMap(entry => [entry.id, ...entry.sets.map(set => set.id)]);
+  assert.equal(new Set(allIds).size, allIds.length);
+
+  const duplicates: Draft = { ...existing, exercises: [
+    { id: 'duplicate-a', name: 'Curl', sets: [{ id: 'curl-set-a', kg: '10', reps: '8' }] },
+    { id: 'duplicate-b', name: ' CUrl ', sets: [{ id: 'curl-set-b', kg: '12', reps: '7' }] },
+  ] };
+  const repeated = applyWorkoutMessage('26.10.2026 Push\nCurl 11-8\nCurl 12-7', duplicates, now);
+  assert.equal(repeated.ok, true); if (repeated.ok) {
+    assert.deepEqual(repeated.draft.exercises.map(entry => entry.id), ['duplicate-a', 'duplicate-b']);
+    assert.deepEqual(repeated.draft.exercises.map(entry => entry.sets[0].id), ['curl-set-a', 'curl-set-b']);
+  }
+
+  const reserved: Draft = { ...existing, exercises: [
+    { id: 'kept-out', name: 'Not included', sets: [
+      { id: 'message-set:1:0', kg: '1', reps: '1' },
+      { id: 'message-set:1:0:1', kg: '1', reps: '1' },
+    ] },
+    { id: 'message-exercise:1', name: 'Also not included', sets: [] },
+    { id: 'message-exercise:1:1', name: 'Another reserved ID', sets: [] },
+  ] };
+  const allocated = applyWorkoutMessage('26.10.2026 Push\nNew one 10-8\nNew two 20-8', reserved, now);
+  assert.equal(allocated.ok, true); if (allocated.ok) {
+    assert.equal(allocated.draft.exercises[1].id, 'message-exercise:1:2');
+    assert.equal(allocated.draft.exercises[1].sets[0].id, 'message-set:1:0:2');
+  }
+});
+
+test('header note suffix preserves every separator through parsing, formatting, and applying', () => {
+  const noteBase: Draft = { ...newDraft('notes'), date: '2026-10-26', title: 'Push', notes: 'existing note', exercises: [] };
+  const parsed = applyWorkoutMessage('26.10.2026 Push | hard | final set\nBench 60-8', noteBase, now);
+  assert.equal(parsed.ok, true); if (!parsed.ok) return;
+  assert.equal(parsed.draft.notes, 'existing note\nhard | final set');
+  const fresh: Draft = { ...parsed.draft, notes: 'hard | final set' };
+  const formatted = formatWorkoutMessage(fresh);
+  assert.equal(formatted.lossless, true);
+  assert.match(formatted.text, /\\| hard \\| final set/);
+  const roundTrip = applyWorkoutMessage(formatted.text, { ...fresh, notes: '' }, now);
+  assert.equal(roundTrip.ok, true); if (roundTrip.ok) assert.equal(roundTrip.draft.notes, 'hard | final set');
+});
+
 test('stored drafts accept old JSON and validated messageText, saved/wire workout strips composer data', () => {
   const old = { ...newDraft('old'), exercises: [] }; assert.deepEqual(parseDraft(JSON.stringify(old)), old);
   const draft = { ...newDraft('new'), messageText: 'invalid raw\n' }; assert.equal(parseDraft(JSON.stringify(draft)).messageText, 'invalid raw\n');

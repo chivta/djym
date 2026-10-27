@@ -50,13 +50,27 @@ export function parseWorkoutMessage(text: string, base: Draft, now = new Date())
       if (!Number.isSafeInteger(k) || !Number.isSafeInteger(p)) return fail('bad_intake', first.line, first.raw, intake[0]);
       kcal = k; proteinG = p; rest = `${rest.slice(0, intake.index)} ${rest.slice(intake.index + intake[0].length)}`.replace(/\s+/g, ' ').trim();
     }
-    const split = rest.split(/\s*\|\s*/, 2);
-    const heading = split[0].trim();
+    const separator = rest.indexOf('|');
+    const heading = (separator < 0 ? rest : rest.slice(0, separator)).trim();
     const oldType = WORKOUT_TYPES.find(t => heading.toLowerCase().startsWith(t.toLowerCase()) && (heading.length === t.length || !wordChar(Array.from(heading.slice(t.length))[0])));
     title = heading ? (oldType && normalizeName(heading) === normalizeName(oldType) ? oldType : heading) : base.title;
-    if (split[1] && split[1].trim() !== base.notes.trim()) notes = [base.notes, split[1].trim()].filter(Boolean).join('\n');
+    const headerNote = separator < 0 ? '' : rest.slice(separator + 1).trim();
+    if (headerNote && headerNote !== base.notes.trim()) notes = [base.notes, headerNote].filter(Boolean).join('\n');
   }
   const exercises: DraftExercise[] = [];
+  const claimedOriginalExercises = new Set<number>();
+  const reservedIds = new Set(base.exercises.flatMap(entry => [entry.id, ...entry.sets.map(set => set.id)]));
+  const usedIds = new Set<string>();
+  const allocateId = (candidate: string): string => {
+    if (!reservedIds.has(candidate) && !usedIds.has(candidate)) { usedIds.add(candidate); return candidate; }
+    let suffix = 1; let allocated = `${candidate}:${suffix}`;
+    while (reservedIds.has(allocated) || usedIds.has(allocated)) allocated = `${candidate}:${++suffix}`;
+    usedIds.add(allocated); return allocated;
+  };
+  const retainId = (original: string | undefined, candidate: string): string => {
+    if (original && !usedIds.has(original)) { usedIds.add(original); return original; }
+    return allocateId(candidate);
+  };
   for (const item of nonblank.slice(start)) {
     const words = item.raw.split(/\s+/); const firstToken = words.findIndex(w => TOKEN.test(w) && (TOKEN.exec(w)?.[1] || TOKEN.exec(w)?.[2]));
     if (firstToken < 0) return fail('no_sets', item.line, item.raw);
@@ -69,9 +83,13 @@ export function parseWorkoutMessage(text: string, base: Draft, now = new Date())
       if (m[1]) weight = m[1];
       sets.push({ id: id('message-set', sets.length), kg: weight, reps: m[2], ...(!m[2] ? { planned: true } : {}) });
     }
-    const fresh: DraftExercise = { id: id('message-exercise', exercises.length), name, sets };
-    const old = base.exercises.find(e => !exercises.some(parsed => parsed.id === e.id) && sameEntry(e, fresh));
-    exercises.push({ ...fresh, ...(old ? { id: old.id, canonicalName: old.canonicalName } : {}), sets: sets.map((s, i) => ({ ...s, id: old?.sets[i]?.id ?? `message-set:${exercises.length}:${i}` })) });
+    const fresh: DraftExercise = { id: '', name, sets };
+    const oldIndex = base.exercises.findIndex((entry, index) => !claimedOriginalExercises.has(index) && sameEntry(entry, fresh));
+    const old = oldIndex < 0 ? undefined : base.exercises[oldIndex];
+    if (old) claimedOriginalExercises.add(oldIndex);
+    const exerciseIndex = exercises.length;
+    const exerciseId = retainId(old?.id, `message-exercise:${exerciseIndex}`);
+    exercises.push({ ...fresh, id: exerciseId, ...(old?.canonicalName ? { canonicalName: old.canonicalName } : {}), sets: sets.map((set, index) => ({ ...set, id: retainId(old?.sets[index]?.id, `message-set:${exerciseIndex}:${index}`) })) });
   }
   return { ok: true, draft: { ...base, date, title, notes, kcal, proteinG, exercises, messageText: text } };
 }
@@ -79,7 +97,7 @@ export function parseWorkoutMessage(text: string, base: Draft, now = new Date())
 /** Render only fields representable by Telegram text; reasons tell callers what structured data to retain. */
 export function formatWorkoutMessage(draft: Draft): FormatResult {
   const reasons: string[] = [];
-  if (draft.notes.trim() && (/[|\r\n]/.test(draft.notes) || draft.notes !== draft.notes.trim().replace(/\s+/g, ' '))) reasons.push('notes cannot be represented without changing whitespace or separators');
+  if (draft.notes.trim() && (/[\r\n]/.test(draft.notes) || draft.notes !== draft.notes.trim().replace(/\s+/g, ' '))) reasons.push('notes cannot be represented without changing whitespace');
   if ((draft.kcal != null) !== (draft.proteinG != null)) reasons.push('partial intake metadata requires the structured editor');
   if (draft.legacyType && normalizeName(draft.legacyType) !== normalizeName(draft.title)) reasons.push('legacyType differs from title');
   if (draft.remoteId || draft.revision || draft.source || draft.sourceRef || draft.startedAt || draft.finishedAt) reasons.push('remote/source/timestamp metadata is not representable');
