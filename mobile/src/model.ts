@@ -18,8 +18,10 @@ export type Draft = Metadata & {
   title: string;
   notes: string;
   exercises: DraftExercise[];
+  /** Exact unfinished message input; never included in a saved Workout. */
+  messageText?: string;
 };
-export type Workout = Omit<Draft, 'exercises'> & {
+export type Workout = Omit<Draft, 'exercises' | 'messageText'> & {
   exercises: { id: string; name: string; canonicalName?: string; sets: { id: string; kg: number; reps: number }[] }[];
 };
 export type ValidationCode = 'title' | 'date' | 'exercises' | 'name' | 'sets' | 'weight' | 'reps';
@@ -82,8 +84,9 @@ export function toWorkout(draft: Draft): Workout {
   const issue = validateDraft(draft);
   if (issue) throw new Error(issue.code);
   draft = materializeDraft(draft);
+  const { messageText: _messageText, ...savedDraft } = draft;
   return {
-    ...draft,
+    ...savedDraft,
     title: draft.title.trim(),
     notes: draft.notes.trim(),
     exercises: draft.exercises.map(entry => ({
@@ -130,7 +133,8 @@ function hasEntries(value: Record<string, unknown>, saved: boolean): boolean {
 export function parseDraft(json: string): Draft {
   try {
     const value: unknown = JSON.parse(json);
-    if (!hasHeader(value) || !hasEntries(value, false) || !hasMetadata(value)) throw new Error('invalid_storage');
+    if (!hasHeader(value) || !hasEntries(value, false) || !hasMetadata(value) ||
+      (value.messageText !== undefined && (typeof value.messageText !== 'string' || value.messageText.length > MAX_TEXT_LENGTH))) throw new Error('invalid_storage');
     return value as Draft;
   } catch {
     throw new Error('invalid_storage');
@@ -139,7 +143,8 @@ export function parseDraft(json: string): Draft {
 export function parseWorkout(json: string): Workout {
   try {
     const value: unknown = JSON.parse(json);
-    if (!hasHeader(value) || !hasEntries(value, true) || !hasMetadata(value)) throw new Error('invalid_storage');
+    if (!hasHeader(value) || !hasEntries(value, true) || !hasMetadata(value) || 'messageText' in value ||
+      (value.exercises as unknown[]).some(entry => isRecord(entry) && ('suggested' in entry || (Array.isArray(entry.sets) && entry.sets.some(set => isRecord(set) && 'planned' in set))))) throw new Error('invalid_storage');
     const workout = value as Workout;
     if (validateDraft(toDraft(workout))) throw new Error('invalid_storage');
     return workout;
