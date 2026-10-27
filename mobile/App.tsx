@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { openDatabaseSync } from 'expo-sqlite';
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { Alert, AppState, BackHandler, FlatList, Linking, Pressable, Text, View } from 'react-native';
+import { Alert, AppState, BackHandler, Linking, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Programs } from './src/Programs';
 import { createProgramStore } from './src/programStore';
@@ -13,10 +13,11 @@ import type { Program } from './src/programs';
 import { Editor } from './src/Editor';
 import { ChatScreen } from './src/ChatScreen';
 import { createChatMessageHandlers } from './src/chatInput';
+import { applyWorkoutMessage } from './src/workoutMessage';
 import { createAutoSync } from './src/autoSync';
 import * as Network from 'expo-network';
 import { t, validationText } from './src/i18n';
-import { newDraft, setCount, toDraft, validateDraft } from './src/model';
+import { newDraft, toDraft, validateDraft } from './src/model';
 import type { Draft, Workout } from './src/model';
 import { createStore, DATABASE_NAME } from './src/storage';
 import { accountKey, createAccountStore } from './src/accountStore';
@@ -26,12 +27,15 @@ import type { ErrorCode, Login, Session } from './src/api';
 import { createAuth } from './src/auth';
 import { createSync } from './src/sync';
 import { styles } from './src/theme';
-import { Button, Card } from './src/ui';
+import { Button } from './src/ui';
 
 function WorkoutLog({ base }: { base: string }) {
   const database = useRef<SQLiteDatabase | null>(null);
   const legacyStore = useRef<ReturnType<typeof createStore> | null>(null);
   const latestDraft = useRef<Draft | null>(null);
+  const scopeToken = useRef<object>({});
+  const messageToken = useRef<object>({});
+  const [scopeGeneration, setScopeGeneration] = useState(0);
   const latestSyncError = useRef<ErrorCode | null>(null);
   const autoSync = useRef(createAutoSync({ run: async () => { latestSyncError.current = null; await sync.run(); return latestSyncError.current; } }));
   const store = useRef<AccountStore | null>(null);
@@ -68,6 +72,7 @@ function WorkoutLog({ base }: { base: string }) {
     } catch { setError(t.loadFailed); }
   }
   function activate(next: Session | null) {
+    scopeToken.current = {}; messageToken.current = {}; setScopeGeneration(value => value + 1);
     sync.activate(null); autoSync.current.setAccountGeneration(null);
     setProgramMenu(false); setEditing(false); setError(null); setSyncError(null); setDraftSaved(true);
     setSession(next); setWorkouts([]); setRows([]); setPrograms([]); setDraft(null); latestDraft.current = null;
@@ -78,7 +83,7 @@ function WorkoutLog({ base }: { base: string }) {
     const data = scoped.load(); setDraft(data.draft); latestDraft.current = data.draft; reload();
     sync.activate({ session: next, store: scoped, api, programs: programStore.current });
     autoSync.current.setAccountGeneration(accountKey(next));
-    void sync.run();
+    autoSync.current.request();
   }
   async function load() {
     setPhase('loading');
@@ -144,129 +149,149 @@ function WorkoutLog({ base }: { base: string }) {
     latestDraft.current = next; setDraft(next); setError(null);
     try { (store.current ?? legacyStore.current)!.writeDraft(next); setDraftSaved(true); } catch { setDraftSaved(false); }
   }
+  const renderScope = scopeToken.current;
+  const renderMessageToken = messageToken.current;
+  const changeForScope = (value: Draft) => { if (scopeToken.current === renderScope) structuredChange(value); };
+  const saveForScope = (value: Draft) => { if (scopeToken.current === renderScope) save(value); };
+  const discardForScope = () => { if (scopeToken.current === renderScope) discard(); };
+  const removeForScope = () => { if (scopeToken.current === renderScope) remove(); };
+  const openForScope = (workout: Workout) => { if (scopeToken.current === renderScope) open(workout); };
+  const structuredForScope = () => { if (scopeToken.current === renderScope) openStructured(); };
   const messageHandlers = createChatMessageHandlers({
-    current: () => latestDraft.current ?? draft,
+    current: () => latestDraft.current,
+    isCurrent: () => scopeToken.current === renderScope && messageToken.current === renderMessageToken,
     setCurrent: value => { latestDraft.current = value; },
     createDraft: () => newDraft(randomUUID()),
     writeDraft: value => { (store.current ?? legacyStore.current)!.writeDraft(value); },
     saveDraft: value => { const target = store.current ?? legacyStore.current; if (!target) throw new Error('storage unavailable'); target.save(value); },
     onIssue: setError,
+    onSaveFailure: () => setError(t.chatSaveFailed),
     onSaved: () => {
+      messageToken.current = {};
       setError(null); setDraft(null); setDraftSaved(true); reload();
       if (store.current) autoSync.current.request();
     },
   });
+  function currentDraft() { return latestDraft.current; }
+  function retryMessageDraft() {
+    const pending = latestDraft.current;
+    if (!pending || scopeToken.current !== renderScope || messageToken.current !== renderMessageToken) return false;
+    try { (store.current ?? legacyStore.current)!.writeDraft(pending); return true; }
+    catch { return false; }
+  }
   function openStructured() {
-    if (draft) { latestDraft.current = draft; setEditing(true); return; }
+    let activeDraft = currentDraft();
+    messageToken.current = {};
+    if (activeDraft?.messageText) {
+      const parsed = applyWorkoutMessage(activeDraft.messageText, activeDraft);
+      if (parsed.ok) {
+        activeDraft = parsed.draft; latestDraft.current = activeDraft;
+        try { (store.current ?? legacyStore.current)!.writeDraft(activeDraft); } catch { setDraftSaved(false); }
+      }
+    }
+    if (activeDraft) { setDraft(activeDraft); setEditing(true); return; }
     change(newDraft(randomUUID())); setEditing(true);
   }
+  function structuredChange(next: Draft) {
+    const structured = { ...next };
+    delete structured.messageText;
+    change(structured);
+  }
   function open(workout?: Workout) {
-    if (draft) {
+    const activeDraft = currentDraft();
+    if (activeDraft) {
       if (workout) Alert.alert(t.draftTitle, t.draftHint, [{ text: t.cancel, style: 'cancel' }]);
-      else setEditing(true);
+      else { setDraft(activeDraft); setEditing(true); }
       return;
     }
+    messageToken.current = {};
     change(workout ? toDraft(workout) : newDraft(randomUUID())); setEditing(true);
   }
   function save(currentDraft: Draft) {
     const issue = validateDraft(currentDraft);
     if (issue) { setError(validationText(issue)); return; }
     try {
-      (store.current ?? legacyStore.current)!.save(currentDraft); reload(); setDraft(null); latestDraft.current = null; setEditing(false); setDraftSaved(true); setError(null); if (store.current) autoSync.current.request();
+      (store.current ?? legacyStore.current)!.save(currentDraft); messageToken.current = {}; reload(); setDraft(null); latestDraft.current = null; setEditing(false); setDraftSaved(true); setError(null); if (store.current) autoSync.current.request();
     } catch { setError(t.saveFailed); }
   }
   function discard() {
-    const scoped = store.current;
+    const scoped = store.current ?? legacyStore.current;
+    const token = scopeToken.current;
     Alert.alert(t.discardTitle, t.discardBody, [
       { text: t.cancel, style: 'cancel' },
       { text: t.discard, style: 'destructive', onPress: () => {
-        if (store.current !== scoped) return;
-        try { store.current!.clearDraft(); setDraft(null); setEditing(false); setDraftSaved(true); setError(null); }
+        if (scopeToken.current !== token || (store.current ?? legacyStore.current) !== scoped || !scoped) return;
+        try { messageToken.current = {}; scoped.clearDraft(); latestDraft.current = null; setDraft(null); setEditing(false); setDraftSaved(true); setError(null); }
         catch { setError(t.discardFailed); }
       } },
     ]);
   }
   function remove() {
-    if (!draft) return;
-    const id = draft.id;
-    const scoped = store.current;
+    const activeDraft = currentDraft();
+    const scoped = store.current ?? legacyStore.current;
+    const token = scopeToken.current;
+    if (!activeDraft || !scoped) return;
+    const id = activeDraft.id;
     Alert.alert(t.deleteTitle, t.deleteBody, [
       { text: t.cancel, style: 'cancel' },
       { text: t.delete, style: 'destructive', onPress: () => {
-        if (store.current !== scoped) return;
-        try { store.current!.remove(id); reload(); setDraft(null); setEditing(false); setDraftSaved(true); setError(null); void sync.run(); }
+        if (scopeToken.current !== token || (store.current ?? legacyStore.current) !== scoped) return;
+        try { messageToken.current = {}; scoped.remove(id); reload(); setDraft(null); latestDraft.current = null; setEditing(false); setDraftSaved(true); setError(null); if (store.current) autoSync.current.request(); }
         catch { setError(t.deleteFailed); }
       } },
     ]);
   }
   function importLegacy() {
     const scoped = store.current;
-    if (!session) return;
+    const token = scopeToken.current;
+    if (!session || !scoped) return;
     Alert.alert(t.importTitle, t.importBody(session.userId, base), [{ text: t.cancel, style: 'cancel' }, { text: t.import, onPress: () => {
-      if (store.current !== scoped) return;
-      try { store.current!.importLegacy(randomUUID); setDraft(store.current!.load().draft); reload(); void sync.run(); }
+      if (store.current !== scoped || scopeToken.current !== token) return;
+      try { scoped.importLegacy(randomUUID); messageToken.current = {}; setScopeGeneration(value => value + 1); const importedDraft = scoped.load().draft; latestDraft.current = importedDraft; setDraft(importedDraft); reload(); autoSync.current.request(); }
       catch { setError(t.importFailed); }
     } }]);
   }
   function resolve(id: string) {
     const scoped = store.current;
+    const token = scopeToken.current;
     Alert.alert(t.conflictTitle, t.conflictBody, [{ text: t.cancel, style: 'cancel' }, { text: t.conflictAction, style: 'destructive', onPress: () => {
-      if (store.current !== scoped) return;
-      void sync.resolve(id).then(() => { if (store.current === scoped && scoped && alive.current) setDraft(scoped.load().draft); });
+      if (store.current !== scoped || scopeToken.current !== token) return;
+      const activeBeforeResolution = latestDraft.current;
+      void sync.resolve(id).then(() => { if (store.current === scoped && scoped && alive.current && scopeToken.current === token) {
+        const next = scoped.load().draft;
+        if (activeBeforeResolution?.id === id) { messageToken.current = {}; setScopeGeneration(value => value + 1); }
+        latestDraft.current = next; setDraft(next);
+      } });
     } }]);
   }
   const draftStatus = <View style={styles.field}>
     <Text style={draftSaved ? styles.muted : styles.error} accessibilityLiveRegion="polite">{draftSaved ? t.draftSaved : t.draftFailed}</Text>
-    {!draftSaved && draft && <Button label={t.retry} secondary onPress={() => change(draft)} />}
+    {!draftSaved && draft && <Button label={t.retry} secondary onPress={() => { if (scopeToken.current === renderScope && latestDraft.current) change(latestDraft.current); }} />}
   </View>;
   const authControls = <View style={styles.field}>
-    {session && <><Text style={styles.muted}>{t.account(session.userId)}</Text><Button label={t.logout} secondary onPress={() => { void logout(); }} /></>}
-    {(!session || syncError === 'unauthorized') && !login && <Button label={t.login} onPress={() => { void signIn(); }} />}
-    {login && <><Text style={styles.muted}>{t.loginWaiting}</Text><Button label={t.openTelegram} onPress={() => { void Linking.openURL(login.bot_url).catch(() => setSyncError('request_failed')); }} /><Button label={t.cancel} secondary onPress={() => { void cancelLogin(); }} /></>}
+    {session && <><Text style={styles.muted}>{t.account(session.userId)}</Text><Button label={t.logout} secondary onPress={() => { if (scopeToken.current === renderScope) void logout(); }} /></>}
+    {(!session || syncError === 'unauthorized') && !login && <Button label={t.login} onPress={() => { if (scopeToken.current === renderScope) void signIn(); }} />}
+    {login && <><Text style={styles.muted}>{t.loginWaiting}</Text><Button label={t.openTelegram} onPress={() => { if (scopeToken.current === renderScope) void Linking.openURL(login.bot_url).catch(() => setSyncError('request_failed')); }} /><Button label={t.cancel} secondary onPress={() => { if (scopeToken.current === renderScope) void cancelLogin(); }} /></>}
     {syncError && <Text style={styles.error} accessibilityRole="alert">{t.errors[syncError]}</Text>}
   </View>;
   if (phase !== 'ready') return <View style={styles.center}>
     <Text style={styles.heading}>{t.appTitle}</Text><Text style={phase === 'failed' ? styles.error : styles.muted}>{phase === 'failed' ? t.loadFailed : t.loading}</Text>
     {phase === 'failed' && <Button label={t.retry} onPress={() => { void load(); }} />}
   </View>;
-  if (!session) return <ChatScreen workouts={workouts} programs={[]} pending={0} draft={draft} statusForWorkout={() => 'On this device'} error={error} status={draftStatus} onDraftText={messageHandlers.onText} onSend={messageHandlers.onSend} onEdit={open} onPrograms={() => {}} onStructured={openStructured} account={<>{authControls}<Text style={styles.muted}>{t.signedOut}</Text>{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
   if (programMenu && programStore.current) return <View style={styles.flex}>
     {syncError && <Text style={styles.error}>{t.errors[syncError]}</Text>}
-    <Programs key={accountKey(session)} store={programStore.current} onBack={() => setProgramMenu(false)} onMutation={() => { reload(); void sync.run(); }} onResolve={id => sync.resolveProgram(id).then(() => { reload(); })} />
+    <Programs key={accountKey(session!)} store={programStore.current} onBack={() => { if (scopeToken.current === renderScope) setProgramMenu(false); }} onMutation={() => { if (scopeToken.current === renderScope) { reload(); autoSync.current.request(); } }} onResolve={id => scopeToken.current === renderScope ? sync.resolveProgram(id).then(() => { reload(); }) : Promise.resolve()} />
   </View>;
-  if (editing && draft) return <Editor draft={draft} history={workouts} programs={programs} onChange={change} onSave={save} onDiscard={discard}
-    onDelete={workouts.some(w => w.id === draft.id) ? remove : undefined} error={error} status={draftStatus}
-    onBack={() => { setEditing(false); setError(null); }} />;
-  if (!editing) return <ChatScreen workouts={workouts} programs={programs} pending={rows.filter(row => row.pending).length} draft={draft} statusForWorkout={id => { const row = rows.find(value => value.workout.id === id); return !row ? 'On this device' : row.error ? 'Conflict' : row.pending ? 'Pending sync' : 'Synced'; }} error={error} status={draftStatus} onDraftText={messageHandlers.onText} onSend={messageHandlers.onSend} onEdit={open} onPrograms={() => setProgramMenu(true)} onStructured={openStructured} account={<>{authControls}{rows.filter(row => row.error).map(row => <View key={row.workout.id} style={styles.field}><Text style={styles.error}>{t.errors[row.error as ErrorCode] ?? t.errors.request_failed}</Text><Button label={t.conflictAction} onPress={() => resolve(row.workout.id)} /></View>)}{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
-  return <FlatList data={workouts} keyExtractor={w => w.id} contentContainerStyle={styles.content}
-    ListHeaderComponent={<View style={styles.field}>
-      <View style={styles.between}><Text style={styles.brand}>{t.appTitle}</Text><Text style={styles.eyebrow}>{t.localBadge}</Text></View>
-      {authControls}
-      <Text style={styles.muted}>{t.pending(rows.filter(r => r.pending).length)}</Text>
-      <Button label={t.programs} secondary onPress={() => setProgramMenu(true)} />
-      <Button label={t.refresh} secondary onPress={() => { void sync.run(); }} />
-      {legacy && <Button label={t.import} secondary onPress={importLegacy} />}
-      {rows.filter(r => r.error).map(r => <Card key={r.workout.id}>
-        <Text style={styles.title}>{r.workout.date}</Text>
-        <Text style={styles.error}>{t.errors[r.error as ErrorCode] ?? t.errors.request_failed}</Text>
-        <Button label={t.conflictAction} onPress={() => resolve(r.workout.id)} />
-      </Card>)}
-      <Button label={draft ? t.resume : t.newWorkout} onPress={() => open()} />
-      {draft && <Card><Text style={styles.title}>{draft.title || t.draftTitle}</Text><Text style={styles.muted}>{draft.date}</Text>{draftStatus}<Text style={styles.muted}>{t.draftHint}</Text><Button label={t.discard} secondary onPress={discard} /></Card>}
-      {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
-      <View style={styles.between}><Text style={styles.heading}>{t.history}</Text><Text style={styles.muted}>{t.workoutCount(workouts.length)}</Text></View>
-    </View>}
-    ListEmptyComponent={<View style={styles.empty}><Text style={styles.title}>{t.emptyTitle}</Text><Text style={styles.muted}>{t.emptyBody}</Text></View>}
-    ListFooterComponent={<Text style={styles.muted}>{t.localHint}</Text>}
-    renderItem={({ item }) => <Pressable accessibilityRole="button" accessibilityLabel={`${item.date}, ${item.title || t.untitled}, ${t.summary(item.exercises.length, setCount(item))}`}
-      onPress={() => open(item)} style={({ pressed }) => pressed && styles.pressed}>
-      <Card><Text style={styles.title}>{item.date} · {item.title || t.untitled}</Text>
-        {!!t.intake(item.kcal, item.proteinG) && <Text style={styles.muted}>{t.intake(item.kcal, item.proteinG)}</Text>}
-        <Text style={styles.muted}>{t.summary(item.exercises.length, setCount(item))}</Text>
-        <Text style={styles.text}>{item.exercises.map(e => `${e.name} ${e.sets.map(s => t.setPreview(String(s.kg), String(s.reps))).join(t.setPreviewSeparator)}`).join('\n')}</Text>
-        {!!item.notes && <Text style={styles.muted} numberOfLines={2}>{item.notes}</Text>}
-      </Card>
-    </Pressable>} />;
+  const activeDraft = currentDraft();
+  if (editing && activeDraft) return <Editor draft={activeDraft} history={workouts} programs={programs} onChange={changeForScope} onSave={saveForScope} onDiscard={discardForScope}
+    onDelete={workouts.some(workout => workout.id === activeDraft.id) ? removeForScope : undefined} error={error} status={draftStatus}
+    onBack={() => { if (scopeToken.current === renderScope) { setDraft(currentDraft()); setEditing(false); setError(null); } }} />;
+  const scopeKey = `${session ? accountKey(session) : 'guest'}:${scopeGeneration}`;
+  return <ChatScreen key={scopeKey} workouts={workouts} programs={programs} pending={rows.filter(row => row.pending).length} draft={activeDraft}
+    statusForWorkout={id => { const row = rows.find(value => value.workout.id === id); return !session ? t.statusLocal : !row ? t.statusLocal : row.error ? t.statusConflict : row.pending ? t.statusPending : t.statusSynced; }}
+    error={error} status={draftStatus} onDraftText={messageHandlers.onText} onRetryDraft={retryMessageDraft} onSend={messageHandlers.onSend} onEdit={openForScope}
+    onStructured={structuredForScope}
+    account={<>{session && <Button label={t.programs} secondary onPress={() => { if (scopeToken.current === renderScope) setProgramMenu(true); }} />}{authControls}{!session && <Text style={styles.muted}>{t.signedOut}</Text>}{session && rows.filter(row => row.error).map(row => <View key={row.workout.id} style={styles.field}><Text style={styles.error}>{t.errors[row.error as ErrorCode] ?? t.errors.request_failed}</Text><Button label={t.conflictAction} onPress={() => { if (scopeToken.current === renderScope) resolve(row.workout.id); }} /></View>)}{session && legacy && <Button label={t.import} secondary onPress={() => { if (scopeToken.current === renderScope) importLegacy(); }} />}</>} />;
 }
 export default function App() {
   let base: string | null = null;

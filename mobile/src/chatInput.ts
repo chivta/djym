@@ -14,31 +14,34 @@ export function insertAtSelection(current: string, selection: TextSelection, val
 /** Guard a synchronous UI event against overlapping sends; the caller owns durable save/validation. */
 export function createChatMessageHandlers(options: {
   current(): Draft | null;
+  isCurrent?(): boolean;
   setCurrent(draft: Draft | null): void;
   createDraft(): Draft;
   writeDraft(draft: Draft): void;
   saveDraft(draft: Draft): void;
   onSaved?(): void;
   onIssue?(message: string): void;
+  onSaveFailure?(): void;
 }) {
   return {
     onText(text: string): boolean {
+      if (options.isCurrent && !options.isCurrent()) return false;
       const next = { ...(options.current() ?? options.createDraft()), messageText: text };
       options.setCurrent(next);
       try { options.writeDraft(next); return true; } catch { return false; }
     },
     onSend(text: string): boolean {
+      if (options.isCurrent && !options.isCurrent()) return false;
       const parsed = applyWorkoutMessage(text, options.current() ?? options.createDraft());
       if (!parsed.ok) {
         options.onIssue?.(`${parsed.issue.text}${parsed.issue.token ? `: ${parsed.issue.token}` : ''}`);
         return false;
       }
-      try {
-        options.saveDraft(parsed.draft);
-        options.setCurrent(null);
-        options.onSaved?.();
-        return true;
-      } catch { return false; }
+      try { options.saveDraft(parsed.draft); }
+      catch { options.onSaveFailure?.(); return false; }
+      options.setCurrent(null);
+      options.onSaved?.();
+      return true;
     },
   };
 }
