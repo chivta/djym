@@ -11,6 +11,10 @@ import { createProgramStore } from './src/programStore';
 import type { ProgramStore } from './src/programStore';
 import type { Program } from './src/programs';
 import { Editor } from './src/Editor';
+import { ChatScreen } from './src/ChatScreen';
+import { applyWorkoutMessage } from './src/workoutMessage';
+import { createAutoSync } from './src/autoSync';
+import * as Network from 'expo-network';
 import { t, validationText } from './src/i18n';
 import { newDraft, setCount, toDraft, validateDraft } from './src/model';
 import type { Draft, Workout } from './src/model';
@@ -26,6 +30,10 @@ import { Button, Card } from './src/ui';
 
 function WorkoutLog({ base }: { base: string }) {
   const database = useRef<SQLiteDatabase | null>(null);
+  const legacyStore = useRef<ReturnType<typeof createStore> | null>(null);
+  const latestDraft = useRef<Draft | null>(null);
+  const latestSyncError = useRef<ErrorCode | null>(null);
+  const autoSync = useRef(createAutoSync({ run: async () => { latestSyncError.current = null; await sync.run(); return latestSyncError.current; } }));
   const store = useRef<AccountStore | null>(null);
   const programStore = useRef<ProgramStore | null>(null);
   const [programMenu, setProgramMenu] = useState(false);
@@ -46,35 +54,37 @@ function WorkoutLog({ base }: { base: string }) {
   const [error, setError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<ErrorCode | null>(null);
   const alive = useRef(true);
-  const sync = useRef(createSync(reload, code => { if (alive.current) setSyncError(code); })).current;
+  const sync = useRef(createSync(reload, code => { latestSyncError.current = code; if (alive.current) setSyncError(code); })).current;
 
   function reload() {
-    if (!alive.current || !store.current) return;
+    if (!alive.current) return;
     try {
-      const data = store.current.load();
-      setWorkouts(data.workouts); setRows(store.current.rows());
+      const data = store.current ? store.current.load() : legacyStore.current?.load();
+      if (!data) return;
+      setWorkouts(data.workouts); setRows(store.current?.rows() ?? []);
       setPrograms(programStore.current?.load() ?? []);
       // Draft content belongs to the editor; sync never replaces it.
-      const old = store.current.legacy(); setLegacy(!!old.workouts.length || !!old.draft);
+      const old = store.current ? store.current.legacy() : (legacyStore.current?.load() ?? { workouts: [], draft: null }); setLegacy(!!old.workouts.length || !!old.draft);
     } catch { setError(t.loadFailed); }
   }
   function activate(next: Session | null) {
-    sync.activate(null);
+    sync.activate(null); autoSync.current.setAccountGeneration(null);
     setProgramMenu(false); setEditing(false); setError(null); setSyncError(null); setDraftSaved(true);
-    setSession(next); setWorkouts([]); setRows([]); setPrograms([]); setDraft(null);
-    if (!next) { store.current = null; programStore.current = null; return; }
+    setSession(next); setWorkouts([]); setRows([]); setPrograms([]); setDraft(null); latestDraft.current = null;
+    if (!next) { store.current = null; programStore.current = null; if (legacyStore.current) { const local = legacyStore.current.load(); setWorkouts(local.workouts); setDraft(local.draft); latestDraft.current = local.draft; setLegacy(!!local.workouts.length || !!local.draft); } return; }
     const scoped = createAccountStore(database.current!, accountKey(next));
     store.current = scoped;
     programStore.current = createProgramStore(database.current!, accountKey(next));
-    const data = scoped.load(); setDraft(data.draft); reload();
+    const data = scoped.load(); setDraft(data.draft); latestDraft.current = data.draft; reload();
     sync.activate({ session: next, store: scoped, api, programs: programStore.current });
+    autoSync.current.setAccountGeneration(accountKey(next));
     void sync.run();
   }
   async function load() {
     setPhase('loading');
     try {
       database.current ??= openDatabaseSync(DATABASE_NAME);
-      createStore(database.current);
+      legacyStore.current = createStore(database.current);
       const restored = await auth.restore();
       if (!alive.current) return;
       activate(restored.session); setLogin(restored.login); setPhase('ready');
@@ -82,7 +92,12 @@ function WorkoutLog({ base }: { base: string }) {
   }
   useEffect(() => {
     alive.current = true; void load();
-    return () => { alive.current = false; sync.activate(null); database.current?.closeSync(); database.current = null; };
+    let disposed = false;
+    autoSync.current.setAppActive(AppState.currentState === 'active');
+    const appState = AppState.addEventListener('change', state => autoSync.current.setAppActive(state === 'active'));
+    void Network.getNetworkStateAsync().then((state: { isConnected?: boolean | null; isInternetReachable?: boolean | null }) => { if (!disposed) autoSync.current.setConnectivity(state.isConnected === false || state.isInternetReachable === false ? 'offline' : state.isConnected && state.isInternetReachable ? 'online' : 'unknown'); }).catch(() => autoSync.current.setConnectivity('unknown'));
+    const network = Network.addNetworkStateListener((state: { isConnected?: boolean | null; isInternetReachable?: boolean | null }) => autoSync.current.setConnectivity(state.isConnected === false || state.isInternetReachable === false ? 'offline' : state.isConnected && state.isInternetReachable ? 'online' : 'unknown'));
+    return () => { disposed = true; appState.remove(); network.remove(); autoSync.current.dispose(); alive.current = false; sync.activate(null); database.current?.closeSync(); database.current = null; };
   }, []);
   useEffect(() => {
     if (!editing && !programMenu) return;
@@ -104,7 +119,7 @@ function WorkoutLog({ base }: { base: string }) {
             if (code === 'login_expired' || code === 'login_invalid') { setLogin(null); void auth.cancel(); }
           }
         }
-      } else if (session) void sync.run();
+      } else if (session) autoSync.current.request();
     }
     const interval = setInterval(() => { void foreground(); }, login ? 2000 : 30000);
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') void foreground(); });
@@ -126,8 +141,28 @@ function WorkoutLog({ base }: { base: string }) {
     try { await auth.logout(old); } catch { setSyncError('request_failed'); }
   }
   function change(next: Draft) {
-    setDraft(next); setError(null);
-    try { store.current!.writeDraft(next); setDraftSaved(true); } catch { setDraftSaved(false); }
+    latestDraft.current = next; setDraft(next); setError(null);
+    try { (store.current ?? legacyStore.current)!.writeDraft(next); setDraftSaved(true); } catch { setDraftSaved(false); }
+  }
+  function messageDraft(text: string): boolean {
+    const current = latestDraft.current ?? draft ?? newDraft(randomUUID());
+    const next = { ...current, messageText: text }; latestDraft.current = next;
+    try { (store.current ?? legacyStore.current)!.writeDraft(next); return true; } catch { return false; }
+  }
+  function sendMessage(text: string): boolean {
+    const current = latestDraft.current ?? draft ?? newDraft(randomUUID());
+    const parsed = applyWorkoutMessage(text, current);
+    if (!parsed.ok) { setError(`${parsed.issue.text}${parsed.issue.token ? `: ${parsed.issue.token}` : ''}`); return false; }
+    try {
+      const target = store.current ?? legacyStore.current; if (!target) throw new Error('storage unavailable');
+      target.save(parsed.draft); setError(null); setDraft(null); latestDraft.current = null; setDraftSaved(true); reload();
+      if (store.current) autoSync.current.request();
+      return true;
+    } catch { setError(t.saveFailed); return false; }
+  }
+  function openStructured() {
+    if (draft) { latestDraft.current = draft; setEditing(true); return; }
+    change(newDraft(randomUUID())); setEditing(true);
   }
   function open(workout?: Workout) {
     if (draft) {
@@ -141,7 +176,7 @@ function WorkoutLog({ base }: { base: string }) {
     const issue = validateDraft(currentDraft);
     if (issue) { setError(validationText(issue)); return; }
     try {
-      store.current!.save(currentDraft); reload(); setDraft(null); setEditing(false); setDraftSaved(true); setError(null); void sync.run();
+      (store.current ?? legacyStore.current)!.save(currentDraft); reload(); setDraft(null); latestDraft.current = null; setEditing(false); setDraftSaved(true); setError(null); if (store.current) autoSync.current.request();
     } catch { setError(t.saveFailed); }
   }
   function discard() {
@@ -198,7 +233,7 @@ function WorkoutLog({ base }: { base: string }) {
     <Text style={styles.heading}>{t.appTitle}</Text><Text style={phase === 'failed' ? styles.error : styles.muted}>{phase === 'failed' ? t.loadFailed : t.loading}</Text>
     {phase === 'failed' && <Button label={t.retry} onPress={() => { void load(); }} />}
   </View>;
-  if (!session) return <View style={styles.content}><Text style={styles.heading}>{t.appTitle}</Text><Text style={styles.muted}>{t.signedOut}</Text>{authControls}</View>;
+  if (!session) return <ChatScreen workouts={workouts} pending={0} draft={draft} error={error} status={draftStatus} onDraftText={messageDraft} onSend={sendMessage} onEdit={open} onPrograms={() => {}} onStructured={openStructured} account={<>{authControls}<Text style={styles.muted}>{t.signedOut}</Text>{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
   if (programMenu && programStore.current) return <View style={styles.flex}>
     {syncError && <Text style={styles.error}>{t.errors[syncError]}</Text>}
     <Programs key={accountKey(session)} store={programStore.current} onBack={() => setProgramMenu(false)} onMutation={() => { reload(); void sync.run(); }} onResolve={id => sync.resolveProgram(id).then(() => { reload(); })} />
@@ -206,6 +241,7 @@ function WorkoutLog({ base }: { base: string }) {
   if (editing && draft) return <Editor draft={draft} history={workouts} programs={programs} onChange={change} onSave={save} onDiscard={discard}
     onDelete={workouts.some(w => w.id === draft.id) ? remove : undefined} error={error} status={draftStatus}
     onBack={() => { setEditing(false); setError(null); }} />;
+  if (!editing) return <ChatScreen workouts={workouts} pending={rows.filter(row => row.pending).length} draft={draft} error={error} status={draftStatus} onDraftText={messageDraft} onSend={sendMessage} onEdit={open} onPrograms={() => setProgramMenu(true)} onStructured={openStructured} account={<>{authControls}{rows.filter(row => row.error).map(row => <View key={row.workout.id} style={styles.field}><Text style={styles.error}>{t.errors[row.error as ErrorCode] ?? t.errors.request_failed}</Text><Button label={t.conflictAction} onPress={() => resolve(row.workout.id)} /></View>)}{legacy && <Button label={t.import} secondary onPress={importLegacy} />}</>} />;
   return <FlatList data={workouts} keyExtractor={w => w.id} contentContainerStyle={styles.content}
     ListHeaderComponent={<View style={styles.field}>
       <View style={styles.between}><Text style={styles.brand}>{t.appTitle}</Text><Text style={styles.eyebrow}>{t.localBadge}</Text></View>

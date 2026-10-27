@@ -49,4 +49,7 @@ export const styles = StyleSheet.create({
   setLabel: { flex: 1, textAlign: 'center', color: colors.muted, fontSize: 12 },
   removeButton: { width: TOUCH_TARGET, height: TOUCH_TARGET, alignItems: 'center', justifyContent: 'center' },
   removeText: { fontSize: 24, color: colors.muted },
+  composer: { padding: space.md, gap: space.sm, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg },
+  composerInput: { minHeight: 96, maxHeight: 200, textAlignVertical: 'top' },
+  suggestion: { minHeight: TOUCH_TARGET, justifyContent: 'center', paddingHorizontal: space.md, marginRight: space.sm, backgroundColor: colors.card, borderRadius: space.md },
 });

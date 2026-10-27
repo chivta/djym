@@ -7,6 +7,7 @@ export function Button({ label, onPress, secondary = false, danger = false, disa
   label: string; onPress: () => void; secondary?: boolean; danger?: boolean; disabled?: boolean;
 }) {
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress}
+    android_ripple={{ color: secondary ? colors.border : colors.accent }}
     style={({ pressed }) => [styles.button, secondary && styles.secondary, disabled && styles.disabled, pressed && styles.pressed]}>
     <Text style={[styles.buttonText, secondary && styles.secondaryText, danger && styles.dangerText]}>{label}</Text>
   </Pressable>;
