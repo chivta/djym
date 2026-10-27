@@ -77,14 +77,77 @@ export function createAccountStore(db: Database, account: string) {
       db.withTransactionSync(() => {
         const d = db.getFirstSync<{ payload: string }>('SELECT payload FROM account_drafts WHERE account = ?;', account);
         const draftId = d ? parseDraft(d.payload).id : null;
+        type Entry = { row: Row; order: number; remoteNode: IndexNode; sourceNode: IndexNode };
+        type IndexNode = { key: unknown; owner: Map<unknown, IndexNode>; entry: Entry; previous?: IndexNode; next?: IndexNode };
+        const byRemote = new Map<unknown, IndexNode>();
+        const bySourceRef = new Map<unknown, IndexNode>();
+        function link(owner: Map<unknown, IndexNode>, key: unknown, entry: Entry, slot: 'remoteNode' | 'sourceNode') {
+          let next = owner.get(key);
+          let previous: IndexNode | undefined;
+          while (next && next.entry.order < entry.order) {
+            previous = next;
+            next = next.next;
+          }
+          const node: IndexNode = { key, owner, entry, next, previous };
+          if (previous) previous.next = node;
+          else owner.set(key, node);
+          if (next) next.previous = node;
+          entry[slot] = node;
+        }
+        function unlink(node: IndexNode) {
+          if (node.previous) node.previous.next = node.next;
+          else if (node.next) node.owner.set(node.key, node.next);
+          else node.owner.delete(node.key);
+          if (node.next) node.next.previous = node.previous;
+        }
+        function index(entry: Entry) {
+          link(byRemote, entry.row.workout.remoteId, entry, 'remoteNode');
+          link(bySourceRef, entry.row.workout.sourceRef, entry, 'sourceNode');
+        }
+        const snapshot = rows();
+        const entries: Entry[] = new Array(snapshot.length);
+        let nextOrder = -1;
+        // rows() is rowid DESC; reverse insertion keeps each index head at the original first match.
+        for (let i = snapshot.length - 1; i >= 0; i--) {
+          const entry = { row: snapshot[i], order: i } as Entry;
+          entries[i] = entry;
+          index(entry);
+        }
+        function replace(entry: Entry, row: Row) {
+          const remoteChanged = entry.row.workout.remoteId !== row.workout.remoteId;
+          const sourceChanged = entry.row.workout.sourceRef !== row.workout.sourceRef;
+          if (remoteChanged) unlink(entry.remoteNode);
+          if (sourceChanged) unlink(entry.sourceNode);
+          entry.row = row;
+          if (remoteChanged) link(byRemote, row.workout.remoteId, entry, 'remoteNode');
+          if (sourceChanged) link(bySourceRef, row.workout.sourceRef, entry, 'sourceNode');
+        }
+        const incomingRemoteIds = new Set(workouts.map(w => w.remoteId));
         for (const w of workouts) {
-          const r = rows().find(r => r.workout.remoteId === w.remoteId || (w.source === 'mobile' && r.workout.sourceRef === w.sourceRef));
+          const remote = byRemote.get(w.remoteId)?.entry;
+          const source = w.source === 'mobile' ? bySourceRef.get(w.sourceRef)?.entry : undefined;
+          const entry = remote && source ? (remote.order <= source.order ? remote : source) : remote ?? source;
+          const r = entry?.row;
           if (r?.pending) {
-            if (!r.workout.remoteId && !r.error) put({ ...r, workout: { ...r.workout, remoteId: w.remoteId, revision: w.revision } });
-          } else if (r?.workout.id !== draftId) put({ workout: { ...w, id: r?.workout.id ?? w.id }, generation: r?.generation ?? 0, pending: false, deleted: false, submitted: true, error: '' });
+            if (!r.workout.remoteId && !r.error) {
+              const adopted = { ...r, workout: { ...r.workout, remoteId: w.remoteId, revision: w.revision } };
+              put(adopted); replace(entry!, adopted);
+            }
+          } else if (r?.workout.id !== draftId) {
+            const merged = { workout: { ...w, id: r?.workout.id ?? w.id }, generation: r?.generation ?? 0, pending: false, deleted: false, submitted: true, error: '' };
+            put(merged);
+            if (entry) replace(entry, merged);
+            else {
+              const added = { row: merged, order: nextOrder-- } as Entry;
+              entries.push(added); index(added);
+            }
+          }
         }
         // A successful full snapshot can remove remote deletions, never local pending writes.
-        for (const r of rows()) if (!r.pending && r.workout.id !== draftId && r.workout.remoteId && !workouts.some(w => w.remoteId === r.workout.remoteId)) erase(r.workout.id);
+        for (const entry of entries) {
+          const r = entry.row;
+          if (!r.pending && r.workout.id !== draftId && r.workout.remoteId && !incomingRemoteIds.has(r.workout.remoteId)) erase(r.workout.id);
+        }
       });
     },
     resolve(id: string, server: Workout | null) {
