@@ -2,21 +2,18 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: gymbro
 resources:
-- namespace.yaml
-- secrets.enc.yaml
-- postgres/statefulset.yaml
-- postgres/service.yaml
-- api/deployment.yaml
-- api/service.yaml
-- bot/pvc.yaml
-- bot/deployment.yaml
-- web/deployment.yaml
-- web/service.yaml
-- ingress.yaml
+  - namespace.yaml
+  - secrets.enc.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - api/deployment.yaml
+  - api/service.yaml
+  - bot/pvc.yaml
+  - bot/deployment.yaml
+  - api/middleware.yaml
+  - ingress.yaml
 images:
-- name: ghcr.io/chivta/gymbro/api
-  newTag: 55a17e3081376a776d9b3b0ed60c3284ec08ccb5
-- name: ghcr.io/chivta/gymbro/bot
-  newTag: 55a17e3081376a776d9b3b0ed60c3284ec08ccb5
-- name: ghcr.io/chivta/gymbro/web
-  newTag: 28a4af60cc531b7c9515f02606d882a7e2b6b511
+  - name: ghcr.io/chivta/gymbro/api
+    newTag: 55a17e3081376a776d9b3b0ed60c3284ec08ccb5
+  - name: ghcr.io/chivta/gymbro/bot
+    newTag: 55a17e3081376a776d9b3b0ed60c3284ec08ccb5

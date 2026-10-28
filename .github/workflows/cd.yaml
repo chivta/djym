@@ -24,7 +24,6 @@ jobs:
     outputs:
       api: ${{ steps.diff.outputs.api }}
       bot: ${{ steps.diff.outputs.bot }}
-      web: ${{ steps.diff.outputs.web }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -34,11 +33,16 @@ jobs:
         run: |
           paths_api="cmd/api internal go.mod go.sum Dockerfile"
           paths_bot="cmd/bot internal go.mod go.sum Dockerfile"
-          paths_web="web"
-          for c in api bot web; do
-            old=$(awk -v img="${IMAGE_PREFIX}/${c}" '$0 ~ "name: "img"$" {f=1; next} f && /newTag:/ {print $2; exit} /^- name:/ {f=0}' k8s/kustomization.yaml)
+          for c in api bot; do
+            old=$(awk -v img="${IMAGE_PREFIX}/${c}" '
+              $0 ~ "name: "img"$" {f=1; next}
+              f && /newTag:/ {print $2; exit}
+              /^- name:/ {f=0}
+            ' k8s/kustomization.yaml)
             paths_var="paths_${c}"
-            if [ -z "$old" ] || [ "$old" = placeholder ] || [ "$old" = "$SHA" ] || ! git cat-file -e "${old}^{commit}" 2>/dev/null; then
+            if [ -z "$old" ] || [ "$old" = placeholder ] || \
+              [ "$old" = "$SHA" ] || \
+              ! git cat-file -e "${old}^{commit}" 2>/dev/null; then
               build=true
             elif git diff --quiet "$old" "$SHA" -- ${!paths_var}; then
               build=false
@@ -61,13 +65,12 @@ jobs:
           - component: bot
             context: .
             build_args: CMD=bot
-          - component: web
-            context: web
-            build_args: ""
     steps:
       - name: Skip unchanged
         id: gate
-        run: echo "build=${{ needs.changes.outputs[matrix.component] }}" >> "$GITHUB_OUTPUT"
+        run: >-
+          echo "build=${{ needs.changes.outputs[matrix.component] }}" >>
+          "$GITHUB_OUTPUT"
       - if: steps.gate.outputs.build == 'true'
         uses: actions/checkout@v7
         with:
@@ -95,7 +98,9 @@ jobs:
 
   deploy:
     needs: [changes, build]
-    if: ${{ needs.changes.outputs.api == 'true' || needs.changes.outputs.bot == 'true' || needs.changes.outputs.web == 'true' }}
+    if: >-
+      ${{ needs.changes.outputs.api == 'true' ||
+      needs.changes.outputs.bot == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -113,11 +118,10 @@ jobs:
         working-directory: k8s
         run: |
           built=""
-          for c in api bot web; do
+          for c in api bot; do
             case "$c" in
               api) b="${{ needs.changes.outputs.api }}" ;;
               bot) b="${{ needs.changes.outputs.bot }}" ;;
-              web) b="${{ needs.changes.outputs.web }}" ;;
             esac
             if [ "$b" = true ]; then
               kustomize edit set image "${IMAGE_PREFIX}/${c}:${SHA}"
@@ -129,6 +133,7 @@ jobs:
         run: |
           git diff --quiet && exit 0
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "deploy: ${BUILT} ${SHA}"
           git push

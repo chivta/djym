@@ -1,5 +1,3 @@
 .env
 dumps/
-web/node_modules
-web/dist
 k8s/secrets.yaml
