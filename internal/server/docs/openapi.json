@@ -1,0 +1,2533 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Gymbro API",
+    "version": "1.0.0",
+    "description": "Existing Gymbro HTTP API. Service routes require the shared bot bearer secret. User routes accept that service credential or a user session (bearer or HttpOnly cookie), restricted to its own internal user ID. Authorization: Bearer takes precedence over cookies; an invalid supplied bearer never falls back to a cookie. Cookie workout/program writes also require application/json and X-Gymbro-Write: 1 (Swagger UI adds this header). Public auth/health endpoints do not require credentials, but supplied credentials are still authenticated. Documentation is always public. No permissive CORS. Use Authorize only with credentials you are permitted to use; credentials are not included or persisted by this documentation. Browser cookies are managed by the browser, not by Swagger Authorize. Browser login over HTTP requires COOKIE_SECURE=false in local configuration; prefer native bearer login otherwise."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as this documentation"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Authentication"
+    },
+    {
+      "name": "Identity"
+    },
+    {
+      "name": "Workouts"
+    },
+    {
+      "name": "Programs"
+    },
+    {
+      "name": "Exercises"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Check database reachability",
+        "tags": [
+          "Health"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Database reachable."
+          },
+          "503": {
+            "description": "Database unreachable."
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "No credentials required. If credentials are supplied they are still authenticated by the global middleware."
+      }
+    },
+    "/v1/identities/resolve": {
+      "post": {
+        "operationId": "resolveIdentity",
+        "summary": "Resolve or create an internal user identity",
+        "tags": [
+          "Identity"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolveIdentityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveIdentityRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/users/{id}/workouts": {
+      "get": {
+        "operationId": "listWorkouts",
+        "summary": "List workouts newest first",
+        "tags": [
+          "Workouts"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One keyset page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListWorkoutsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque next_cursor from a previous response."
+          }
+        ],
+        "description": "Newest first by performed_on, then workout ID descending. An unknown user yields an empty page."
+      },
+      "post": {
+        "operationId": "saveWorkout",
+        "summary": "Create or upsert a workout",
+        "tags": [
+          "Workouts"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Existing workout replaced, or identical session-create replay.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveWorkoutResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Workout created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveWorkoutResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Service credentials upsert by source/source_ref. User sessions create only with source=mobile and a UUID source_ref; identical replays return the existing workout, changed replays return 409. Sessions can access only their own user ID.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWorkoutRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "X-Gymbro-Write",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
+          }
+        ]
+      }
+    },
+    "/v1/users/{id}/workouts/{workout_id}": {
+      "put": {
+        "operationId": "updateWorkout",
+        "summary": "Replace workout content at a revision",
+        "tags": [
+          "Workouts"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workout updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SaveWorkoutResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkoutRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "workout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Resource ID."
+          },
+          {
+            "name": "X-Gymbro-Write",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "deleteWorkout",
+        "summary": "Delete a workout at a revision",
+        "tags": [
+          "Workouts"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Workout deleted."
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteWorkoutRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "workout_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Resource ID."
+          },
+          {
+            "name": "X-Gymbro-Write",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
+          }
+        ]
+      }
+    },
+    "/v1/users/{id}/programs": {
+      "get": {
+        "operationId": "listPrograms",
+        "summary": "List ordered program templates",
+        "tags": [
+          "Programs"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Program templates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListProgramsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          }
+        ],
+        "description": "Ordered by program name, then ID. An unknown user yields an empty list."
+      },
+      "post": {
+        "operationId": "createProgram",
+        "summary": "Create a program template",
+        "tags": [
+          "Programs"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Identical replay of existing program.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Program"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Program created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Program"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Client supplies a UUID. Reusing it with different content returns 409.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProgramRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "X-Gymbro-Write",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
+          }
+        ]
+      }
+    },
+    "/v1/users/{id}/programs/{program_id}": {
+      "put": {
+        "operationId": "updateProgram",
+        "summary": "Replace a program at a revision",
+        "tags": [
+          "Programs"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Program updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Program"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProgramRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "program_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Resource ID."
+          },
+          {
+            "name": "X-Gymbro-Write",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "deleteProgram",
+        "summary": "Delete a program at a revision",
+        "tags": [
+          "Programs"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          },
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Program deleted."
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteProgramRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          },
+          {
+            "name": "program_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Resource ID."
+          },
+          {
+            "name": "X-Gymbro-Write",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
+          }
+        ]
+      }
+    },
+    "/v1/users/{id}/exercises": {
+      "get": {
+        "operationId": "listExercises",
+        "summary": "List exercises and aliases",
+        "tags": [
+          "Exercises"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exercises.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListExercisesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          }
+        ],
+        "description": "An unknown user yields an empty list. Service credentials only."
+      }
+    },
+    "/v1/users/{id}/exercises/replace": {
+      "post": {
+        "operationId": "replaceExercise",
+        "summary": "Merge an exercise or record an alias",
+        "tags": [
+          "Exercises"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exercise merged or alias recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplaceExerciseResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Names refer to the same exercise (same_exercise).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceExerciseRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "Internal user ID, not Telegram ID."
+          }
+        ]
+      }
+    },
+    "/v1/auth/telegram/confirm": {
+      "post": {
+        "operationId": "confirmTelegram",
+        "summary": "Confirm a Telegram login (bot only)",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "ServiceBearer": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Login confirmed."
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Wrong user or credential type, or missing cookie-write header (forbidden).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested user, workout, program, exercise or login not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Login request expired or missing (login_expired).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmLoginRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/telegram/login": {
+      "post": {
+        "operationId": "startLogin",
+        "summary": "Start browser Telegram login",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Login deep link; sets gymbro_login HttpOnly cookie for 10 minutes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartLoginResponse"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "gymbro_login nonce; HttpOnly, SameSite=Lax, Path=/; Secure depends on deployment.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Open bot_url in Telegram, then poll from this same browser. Does not require Authorization. Supplied invalid credentials still fail authentication."
+      }
+    },
+    "/auth/telegram/poll": {
+      "post": {
+        "operationId": "pollLogin",
+        "summary": "Poll browser login and claim a session",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "LoginCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pending, or confirmed with user_id; sets session cookie and clears login cookie on confirmation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PollLoginResponse"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "On confirmation sets gymbro_session (30 days) and clears gymbro_login; HttpOnly, SameSite=Lax, Path=/; Secure depends on deployment.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Login request expired or missing (login_expired).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Requires the gymbro_login cookie set by browser login. Login is claimed once; confirmed session lifetime is 30 days."
+      }
+    },
+    "/auth/telegram/mobile/login": {
+      "post": {
+        "operationId": "startMobileLogin",
+        "summary": "Start native Telegram login",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Deep link and explicit nonce; no cookie is set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartMobileLoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Login request expires in 10 minutes. Keep the nonce secret."
+      }
+    },
+    "/auth/telegram/mobile/poll": {
+      "post": {
+        "operationId": "pollMobileLogin",
+        "summary": "Poll native login and claim bearer session",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Pending, or confirmed with a 30-day bearer session; no cookies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PollMobileLoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (invalid_request).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Login request expired or missing (login_expired).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Send nonce returned by mobile/login. Login is claimed once. Never share or log the returned session_token.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PollMobileLoginRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "me",
+        "summary": "Get current session user",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Internal user ID.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Service bearer credentials are not accepted."
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "summary": "Revoke the current session",
+        "tags": [
+          "Authentication"
+        ],
+        "security": [
+          {
+            "SessionBearer": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Session revoked. Cookie is cleared only for cookie-authenticated logout."
+          },
+          "401": {
+            "description": "Missing or invalid credentials (unauthorized).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error (internal).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "description": "Service bearer credentials are not accepted."
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ServiceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Shared service/bot secret, not a user session. Enter the token only, without Bearer prefix."
+      },
+      "SessionBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "User session_token returned by mobile login polling. Enter the token only."
+      },
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gymbro_session",
+        "description": "HttpOnly browser session set by browser login polling. Browser-managed; cannot be manually set by Swagger UI."
+      },
+      "LoginCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gymbro_login",
+        "description": "Browser-managed nonce cookie set by /auth/telegram/login; needed to poll and claim that login."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "invalid_request",
+              "unauthorized",
+              "forbidden",
+              "user_not_found",
+              "program_not_found",
+              "workout_not_found",
+              "same_exercise",
+              "exercise_not_found",
+              "bad_name_is_alias",
+              "conflict",
+              "internal",
+              "login_invalid",
+              "login_expired"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ResolveIdentityRequest": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          },
+          "external_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "provider",
+          "external_id"
+        ]
+      },
+      "ResolveIdentityResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "Set": {
+        "type": "object",
+        "properties": {
+          "weight": {
+            "type": "string",
+            "pattern": "^\\d{1,4}(\\.\\d{1,2})?$",
+            "description": "Non-negative kg as a decimal string, never a float."
+          },
+          "reps": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "weight",
+          "reps"
+        ]
+      },
+      "Entry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Trimmed exercise name."
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Set"
+            },
+            "nullable": true
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "SaveWorkoutRequest": {
+        "type": "object",
+        "properties": {
+          "performed_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Trimmed; blank/absent uses type or a generated default.",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "description": "Optional; case-insensitive known workout type, stored canonically: push+pull, push+lower, lower, upper, push, pull, full body, workout A, workout B, день 1, день 2, руки, рест. Empty string is accepted."
+          },
+          "kcal": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "protein_g": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "note": {
+            "type": "string"
+          },
+          "raw_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Session creates require mobile; service may choose source."
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Session creates require a UUID. Service source/source_ref identifies the workout to upsert."
+          }
+        },
+        "description": "Replaces complete workout content. started_at and finished_at must be both present or both absent/null; finish must not precede start. Absent times clear previous times. Entry and set order is significant; both may be empty.",
+        "required": [
+          "performed_on",
+          "raw_text",
+          "source",
+          "source_ref"
+        ]
+      },
+      "UpdateWorkoutRequest": {
+        "type": "object",
+        "properties": {
+          "performed_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Trimmed; blank/absent uses type or a generated default.",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "description": "Optional; case-insensitive known workout type, stored canonically: push+pull, push+lower, lower, upper, push, pull, full body, workout A, workout B, день 1, день 2, руки, рест. Empty string is accepted."
+          },
+          "kcal": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "protein_g": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "note": {
+            "type": "string"
+          },
+          "raw_text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Entry"
+            },
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Full replacement of content without changing source/source_ref. Paired time rules match SaveWorkoutRequest. expected_updated_at must equal the current stored revision.",
+        "required": [
+          "performed_on",
+          "raw_text",
+          "expected_updated_at"
+        ]
+      },
+      "DeleteWorkoutRequest": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expected_updated_at"
+        ]
+      },
+      "SaveWorkoutResponse": {
+        "type": "object",
+        "properties": {
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workout_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "new_exercises": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "updated_at",
+          "workout_id",
+          "created",
+          "new_exercises"
+        ]
+      },
+      "WorkoutEntry": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name_as_written": {
+            "type": "string"
+          },
+          "exercise": {
+            "type": "string"
+          },
+          "sets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Set"
+            }
+          }
+        },
+        "required": [
+          "position",
+          "name_as_written",
+          "exercise",
+          "sets"
+        ]
+      },
+      "Workout": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "performed_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "kcal": {
+            "type": "integer",
+            "nullable": true
+          },
+          "protein_g": {
+            "type": "integer",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "raw_text": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkoutEntry"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "performed_on",
+          "type",
+          "kcal",
+          "protein_g",
+          "note",
+          "started_at",
+          "finished_at",
+          "source",
+          "source_ref",
+          "raw_text",
+          "updated_at",
+          "entries"
+        ]
+      },
+      "ListWorkoutsResponse": {
+        "type": "object",
+        "properties": {
+          "workouts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Workout"
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Opaque cursor; null on last page.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "workouts",
+          "next_cursor"
+        ]
+      },
+      "Exercise": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "aliases"
+        ]
+      },
+      "ListExercisesResponse": {
+        "type": "object",
+        "properties": {
+          "exercises": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Exercise"
+            }
+          }
+        },
+        "required": [
+          "exercises"
+        ]
+      },
+      "ReplaceExerciseRequest": {
+        "type": "object",
+        "properties": {
+          "bad_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "correct_name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "bad_name",
+          "correct_name"
+        ]
+      },
+      "ReplaceExerciseResponse": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "merged",
+              "alias_only"
+            ]
+          },
+          "exercise": {
+            "$ref": "#/components/schemas/Exercise"
+          }
+        },
+        "required": [
+          "outcome",
+          "exercise"
+        ]
+      },
+      "ProgramEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Surrounding whitespace is trimmed; must not be blank."
+          },
+          "set_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "target_reps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999,
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "set_count"
+        ]
+      },
+      "Program": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Surrounding whitespace is trimmed; must not be blank."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgramEntry"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "entries",
+          "updated_at"
+        ]
+      },
+      "CreateProgramRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Surrounding whitespace is trimmed; must not be blank."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgramEntry"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "entries"
+        ]
+      },
+      "UpdateProgramRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Surrounding whitespace is trimmed; must not be blank."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgramEntry"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "entries",
+          "expected_updated_at"
+        ]
+      },
+      "DeleteProgramRequest": {
+        "type": "object",
+        "properties": {
+          "expected_updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "expected_updated_at"
+        ]
+      },
+      "ListProgramsResponse": {
+        "type": "object",
+        "properties": {
+          "programs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Program"
+            }
+          }
+        },
+        "required": [
+          "programs"
+        ]
+      },
+      "ConfirmLoginRequest": {
+        "type": "object",
+        "properties": {
+          "login_token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "telegram_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "login_token",
+          "telegram_user_id"
+        ]
+      },
+      "StartLoginResponse": {
+        "type": "object",
+        "properties": {
+          "bot_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "bot_url",
+          "expires_at"
+        ]
+      },
+      "StartMobileLoginResponse": {
+        "type": "object",
+        "properties": {
+          "bot_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nonce": {
+            "type": "string",
+            "minLength": 43,
+            "maxLength": 43
+          }
+        },
+        "required": [
+          "bot_url",
+          "expires_at",
+          "nonce"
+        ]
+      },
+      "PollMobileLoginRequest": {
+        "type": "object",
+        "properties": {
+          "nonce": {
+            "type": "string",
+            "minLength": 43,
+            "maxLength": 43
+          }
+        },
+        "required": [
+          "nonce"
+        ]
+      },
+      "PollLoginResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "confirmed"
+            ]
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "description": "user_id is returned only when confirmed.",
+        "required": [
+          "status"
+        ]
+      },
+      "PollMobileLoginResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "confirmed"
+            ]
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "session_token": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "user_id, session_token and expires_at are present only when confirmed. Keep the session token secret.",
+        "required": [
+          "status"
+        ]
+      },
+      "MeResponse": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      }
+    }
+  }
+}

@@ -39,20 +39,13 @@ func Run(ctx context.Context, cfg config.Config) error {
 	st := store.New(db)
 	h := &handlers{store: st, validate: validate, botUsername: cfg.BotUsername, cookieSecure: cfg.CookieSecure}
 
-	router := gin.New()
-	router.Use(gin.Recovery(), authenticate(cfg.APISecret, st))
-	router.GET(healthPath, func(c *gin.Context) {
+	router := newRouter(cfg.APISecret, st, h, func(c *gin.Context) {
 		if db.Ping(c.Request.Context()) != nil {
 			c.Status(http.StatusServiceUnavailable)
 			return
 		}
 		c.Status(http.StatusOK)
 	})
-	v1 := router.Group("/v1")
-	h.register(v1.Group("", requireService()), v1.Group("", requireUserAccess()))
-	authGroup := router.Group("/auth")
-	h.registerAuth(authGroup, authGroup.Group("", requireSession()))
-
 	srv := &http.Server{
 		Addr:              net.JoinHostPort("", cfg.Port),
 		Handler:           router,
@@ -86,4 +79,17 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 	log.Info().Msg("server stopped")
 	return nil
+}
+
+func newRouter(secret string, sessions sessionReader, h *handlers, health gin.HandlerFunc) *gin.Engine {
+	router := gin.New()
+	router.Use(gin.Recovery())
+	registerDocs(router)
+	router.Use(authenticate(secret, sessions))
+	router.GET(healthPath, health)
+	v1 := router.Group("/v1")
+	h.register(v1.Group("", requireService()), v1.Group("", requireUserAccess()))
+	authGroup := router.Group("/auth")
+	h.registerAuth(authGroup, authGroup.Group("", requireSession()))
+	return router
 }

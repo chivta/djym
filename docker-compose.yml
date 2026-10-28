@@ -6,7 +6,7 @@ services:
       target: dev
     env_file: .env
     ports:
-      - "${PORT}:${PORT}"
+      - "10.10.0.2:${PORT}:${PORT}"
     volumes:
       - .:/app
     depends_on:
