@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f6f7f2">
+<title>Fieldnotes — workout journal prototype</title>
+<style>
+:root{color-scheme:light;--paper:#f6f7f2;--ink:#203a36;--muted:#67756c;--line:#dce1d8;--green:#244e41;--lime:#d9edab;--white:#fffefa;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:#e6eae2;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}button,textarea{font:inherit}button{cursor:pointer;color:inherit}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #638d41;outline-offset:4px}button:disabled{cursor:default;opacity:.45}button{touch-action:manipulation}button svg{width:20px;height:20px;flex-shrink:0}button{border:0}h1,h2,h3,p{margin:0}svg{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.stage{min-height:100dvh;display:flex;align-items:center;justify-content:center;gap:100px;padding:42px 24px}.intro{width:300px}.wordmark{font-size:15px;letter-spacing:.13em;font-weight:750;display:flex;align-items:center;gap:10px}.mark{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:10px;background:var(--green);color:var(--lime);font-size:22px;letter-spacing:0}.intro h1{font-size:54px;font-weight:500;letter-spacing:-2.5px;line-height:1.08;margin:40px 0 20px}.intro p{font-size:16px;line-height:1.7;color:var(--muted)}.intro .caption{font:11px var(--mono);letter-spacing:.06em;margin-top:64px}.app{width:440px;background:var(--paper);min-height:850px;border:1px solid #d4dbcf;border-radius:36px;box-shadow:0 24px 80px #203a3615,0 3px 10px #203a3608;overflow:hidden;position:relative}.top{padding:28px 24px 0}.brand-row,.section-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand-row .wordmark{font-size:13px;letter-spacing:.08em}.local-badge{display:flex;align-items:center;gap:6px;font-size:11px;color:#4f6551}.dot{width:6px;height:6px;border-radius:50%;background:#6a8e45}.tabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-top:26px}.tab{background:none;padding:0 0 14px;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}.tab[aria-current="page"]{color:var(--ink);border-bottom-color:var(--green);font-weight:650}.page{padding:26px 24px 24px}.eyebrow{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}h2{font-size:29px;letter-spacing:-1px;font-weight:550;margin-top:7px;line-height:1.15}.subtitle{font-size:13px;line-height:1.6;color:var(--muted);margin-top:9px}.draft-pill{background:#e7ecdf;color:#52664c;border-radius:6px;padding:5px 8px;font-size:10px;font-weight:650;white-space:nowrap}.program-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:13px 0;background:transparent;font-size:12px;border-bottom:1px solid var(--line);margin:14px 0 20px;text-align:left}.program-link span{color:var(--muted)}.program-link strong{font-weight:550;color:var(--ink)}.editor-label{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:11px;color:var(--muted)}.editor-box{background:var(--white);border:1px solid #cfd9ca;border-radius:18px 18px 5px 18px;box-shadow:0 3px 10px #203a3603;overflow:hidden}.editor-box:focus-within{border-color:#69816a;box-shadow:0 0 0 3px #69816a10}textarea{display:block;width:100%;min-height:260px;resize:vertical;padding:21px 18px 16px;border:0;outline:none;background:transparent;color:var(--ink);font-size:16px;line-height:1.9;letter-spacing:-.2px;tab-size:2}.editor-footer{display:flex;justify-content:space-between;padding:9px 15px;border-top:1px solid #edf0e7;font-size:10px;color:var(--muted);gap:8px}.save-status{display:flex;align-items:center;gap:5px}.helper{padding-top:18px}.helper-heading{display:flex;justify-content:space-between;align-items:baseline;gap:10px}.helper-heading h3{font-size:11px;font-weight:650}.helper-heading span{font-size:10px;color:var(--muted)}.chips{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.chip{background:#edf0e7;border:1px solid #dce3d5;border-radius:9px;padding:10px 11px;text-align:left;font-size:12px;line-height:1.35}.chip:hover{background:#dfe9d4}.previous{border-left:2px solid #a5ba8c;padding-left:12px;margin-top:15px}.previous p{font-size:10px;color:var(--muted);line-height:1.6}.previous .chip{background:#e7eddc;font-family:var(--mono);font-size:11px}.empty-hint{font-size:12px;color:var(--muted);line-height:1.6;margin-top:10px}.syntax{border-top:1px solid var(--line);margin-top:20px;padding-top:13px;font-size:11px;color:var(--muted)}summary{cursor:pointer;line-height:1.6}details p{margin-top:10px;line-height:1.7}code{font:11px var(--mono);color:var(--ink)}.action-area{padding:16px 24px 22px;background:var(--paper);border-top:1px solid var(--line);position:sticky;bottom:0;z-index:2}.primary{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--green);color:#f9fbea;border-radius:12px;padding:17px 18px;font-size:14px;font-weight:600}.primary:hover{background:#163d31}.primary svg{color:var(--lime)}.footnote{font-size:10px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.5}.demo-note{font-size:10px;color:var(--muted);line-height:1.6;padding:0 24px 18px;text-align:center}.notice{background:#f0ead6;color:#67572a;font-size:12px;line-height:1.6;padding:12px;border-radius:10px;margin:12px 0}.notice:empty{display:none}[hidden]{display:none!important}.list{display:grid;gap:12px;margin-top:24px}.record{width:100%;text-align:left;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:18px}.record:hover{border-color:#91a283}.record-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.record h3{font-size:17px;font-weight:550;overflow-wrap:anywhere}.record p{font-size:12px;line-height:1.6;color:var(--muted);margin-top:8px}.tag{font-size:9px;background:#eaf0df;padding:4px 7px;border-radius:4px;white-space:nowrap}.program-card{padding:20px;background:var(--white);border:1px solid var(--line);border-radius:16px}.program-card.selected{border-color:#718a5c;background:#f1f5e8}.program-card h3{font-size:18px;font-weight:550}.program-card ul{padding-left:18px;color:var(--muted);font-size:13px;line-height:2;margin:16px 0}.secondary{background:transparent;border:1px solid #bfcdb8;border-radius:9px;padding:11px 14px;font-size:12px}.back{background:none;padding:0;color:var(--muted);font-size:12px;display:flex;align-items:center;gap:5px;margin-bottom:24px}.completed-icon{display:grid;place-items:center;background:var(--lime);color:var(--green);width:48px;height:48px;border-radius:50%;margin-bottom:20px}.completed-icon svg{width:24px;height:24px}.snapshot{white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.9 var(--mono);padding:22px 18px;background:var(--white);border:1px solid var(--line);border-radius:16px;margin:24px 0 16px}.detail-actions{display:grid;gap:10px;margin-top:22px}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);padding:12px 18px;border-radius:12px;background:var(--ink);color:white;font-size:12px;box-shadow:0 4px 20px #0002;z-index:5;text-align:center}.revision-note{font-size:11px;line-height:1.6;color:var(--muted);margin-top:10px}@media(min-width:760px){.app{max-height:calc(100dvh - 84px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#bdc9b4 transparent}.app{min-height:min(850px,calc(100dvh - 84px))}}@media(max-width:900px){.intro{display:none}.stage{padding:24px}}@media(max-width:520px){:root{background:var(--paper)}.stage{display:block;padding:0}.app{width:100%;min-height:100dvh;border:0;border-radius:0;box-shadow:none;overflow:visible}.top{padding-top:max(22px,env(safe-area-inset-top))}.page{padding-top:24px}.action-area{padding-bottom:max(16px,env(safe-area-inset-bottom))}textarea{min-height:250px}.demo-note{padding-bottom:16px}}@media(prefers-reduced-motion:no-preference){button{transition:background .15s,border-color .15s}}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="display:none"><symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol><symbol id="check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol><symbol id="chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol></svg>
+<div class="stage">
+<aside class="intro"><div class="wordmark"><span class="mark">f.</span> FIELDNOTES</div><h1>Less tapping.<br>More training.</h1><p>A little space for your next session.<br>The freedom of a message, with a memory for the details.</p><p class="caption">WORKOUT JOURNAL / DESIGN PROTOTYPE 01</p></aside>
+<main class="app" aria-label="Workout journal">
+<header class="top"><div class="brand-row"><div class="wordmark"><span class="mark">f.</span> FIELDNOTES</div><span class="local-badge"><span class="dot"></span>Offline-ready · local only</span></div><nav class="tabs" aria-label="Main navigation"><button class="tab" data-page="workout" aria-current="page">Workout</button><button class="tab" data-page="history">History</button><button class="tab" data-page="program">Program</button></nav></header>
+<section id="workout-page" class="page" aria-labelledby="workout-heading">
+<div class="section-row"><div><p class="eyebrow">Your training space</p><h2 id="workout-heading">Just write your workout.</h2></div><span class="draft-pill">Draft</span></div>
+<p class="subtitle" id="workout-subtitle">Like a message to yourself. Nothing is final yet.</p>
+<div id="empty-draft" class="list" hidden><button class="primary" id="start-from-empty"><span>Start a fresh workout</span><svg aria-hidden="true"><use href="#arrow"/></svg></button><p class="subtitle">Your completed sessions are in History. Open one to edit a new copy, without changing the original.</p></div>
+<button class="program-link" id="program-link"><span>Suggestions from <strong id="program-name"></strong></span><svg aria-hidden="true"><use href="#chevron"/></svg></button>
+<div class="editor-label"><label for="editor">WORKOUT NOTE</label><span>Always yours to edit</span></div>
+<div class="editor-box"><textarea id="editor" aria-describedby="syntax-help" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="03.10 your workout title&#10;жим в нахилі сміт 60-10 -9"></textarea><div class="editor-footer"><span id="save-status" class="save-status" role="status"></span><span>Only complete when you say so</span></div></div>
+<div id="storage-notice" class="notice" role="status"></div><p id="copy-note" class="revision-note" hidden>Editing a new copy. The original completed workout stays unchanged.</p>
+<div class="helper"><div class="helper-heading"><h3 id="suggestion-heading">From your program</h3><span id="suggestion-source">Tap to insert</span></div><div id="suggestions" class="chips"></div><p id="suggestion-hint" class="empty-hint"></p><div id="previous" class="previous" hidden><p id="previous-label"></p><div id="previous-chips" class="chips"></div></div></div>
+<details class="syntax" id="syntax-help"><summary>A familiar shorthand, a little help</summary><p>First line: <code>03.10 any workout title</code> (or <code>03.10.2026</code>). Titles are free text, not a fixed list. Optional intake: <code>(680/37)</code>.</p><p>One exercise per line: <code>жим в нахилі сміт 60-10 -9 50-11 -10</code><br><code>60-10</code> = 60 kg × 10 reps. <code>-9</code> repeats the last weight. <code>20-</code> is a planned set. You can leave any unfinished text in your draft.</p><p>This prototype stores text as written; it does not validate it with the Telegram parser.</p></details>
+</section>
+<div id="completion-bar" class="action-area"><button id="complete" class="primary"><span>Complete workout</span><svg aria-hidden="true"><use href="#check"/></svg></button><p class="footnote">Saves a completed snapshot on this device. No sync.</p></div>
+<section id="history-page" class="page" aria-labelledby="history-heading" hidden><p class="eyebrow">The work adds up</p><h2 id="history-heading">Your sessions.</h2><p class="subtitle">Completed notes, not drafts. Sample sessions are labeled; your own sessions stay on this device.</p><div id="history-list" class="list"></div></section>
+<section id="program-page" class="page" aria-labelledby="program-heading" hidden><p class="eyebrow">A starting point, not a rule</p><h2 id="program-heading">Your program.</h2><p class="subtitle">Sample stored programs for this prototype. Pick one to change exercise suggestions, not your note or its title.</p><div id="program-list" class="list"></div></section>
+<section id="detail-page" class="page" aria-labelledby="detail-heading" hidden><button class="back" id="back-history">← All sessions</button><div class="completed-icon"><svg aria-hidden="true"><use href="#check"/></svg></div><p class="eyebrow" id="detail-kind"></p><h2 id="detail-heading"></h2><p id="detail-meta" class="subtitle"></p><pre id="snapshot" class="snapshot"></pre><p class="subtitle">A completed snapshot. Editing again creates a new draft; this record will not change.</p><div class="detail-actions"><button class="primary" id="edit-again"><span>Edit as a new draft</span><svg aria-hidden="true"><use href="#arrow"/></svg></button><button class="secondary" id="new-workout">Start a fresh workout</button></div></section>
+<p class="demo-note">Interactive design prototype · Sample programs & history<br>No account, no network requests, no real sync.</p>
+</main></div><div id="toast" class="toast" role="status" hidden></div>
+<script>
+'use strict';
+// Deliberately local demo fixtures, not API-backed program or history data.
+const programs = [
+ {id:'upper',name:'Upper / strength',exercises:['жим в нахилі сміт','підтягування','жим гантелей в нахилі','розведення гантелей','скручування']},
+ {id:'lower',name:'Lower / foundation',exercises:['присідання','румунська тяга','випади з гантелями','підйоми на носки','скручування']}
+];
+const samples = [
+ {id:'sample-upper',sample:true,date:'2026-09-29',program:'upper',text:'29.09 upper\nжим в нахилі сміт 60-10 -9 50-11 -10\nпідтягування 82-9 -9\nскручування -20 -20'},
+ {id:'sample-lower',sample:true,date:'2026-09-27',program:'lower',text:'27.09 lower\nприсідання 70-10 -10 60-12\nрумунська тяга 60-12 -12'},
+ {id:'sample-push',sample:true,date:'2026-09-24',program:'upper',text:'24.09 push\nжим в нахилі сміт 55-12 -10\nжим гантелей в нахилі 25-10 -9'},
+ {id:'sample-upper-old',sample:true,date:'2026-09-22',program:'upper',text:'22.09 upper\nжим в нахилі сміт 55-10 -10\nрозведення гантелей 13.5-8 -8'}
+];
+const $ = id => document.getElementById(id);
+const key = 'fieldnotes-prototype-v1';
+const initialText = '03.10 upper\nжим в нахилі сміт 60-10 -9\n';
+let state = {program:'upper',draft:{text:initialText,copy:false},records:[]};
+let storageAvailable = true;
+try {
+ const raw = localStorage.getItem(key);
+ if (raw) {
+  const saved = JSON.parse(raw);
+  if (!programs.some(p=>p.id===saved.program) || !Array.isArray(saved.records) || !(saved.draft===null || (saved.draft && typeof saved.draft.text==='string'))) throw new Error('Invalid saved draft');
+  state = {program:saved.program,draft:saved.draft,records:saved.records.filter(r=>r && typeof r.id==='string' && typeof r.text==='string' && typeof r.date==='string' && programs.some(p=>p.id===r.program)).map(r=>({...r,sample:false}))};
+ }
+} catch (_) { storageAvailable = false; }
+let page = 'workout', selectedRecord = null, caret = 0, toastTimer;
+const editor = $('editor');
+function persist() {
+ try {localStorage.setItem(key, JSON.stringify(state));storageAvailable=true;} catch (_) {storageAvailable=false;}
+ storageStatus();
+}
+function storageStatus() {
+ $('save-status').textContent = storageAvailable ? '✓ Draft kept on this device' : 'Memory only · not persisted';
+ $('storage-notice').textContent = storageAvailable ? '' : 'Device storage is unavailable or could not be read. You can still use this prototype, but changes may be lost when you close or reload it.';
+}
+function announce(text) {clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,4000);}
+function activeProgram() {return programs.find(p=>p.id===state.program);}
+function titleOf(text) {return (text.split('\n').find(l=>l.trim()) || '').trim().replace(/^\d{1,2}\.\d{1,2}(?:\.\d{4})?(?:\s+|$)/,'').replace(/\(\d+\/\d+[^)]*\)/g,'').trim();}
+function normalize(text) {return text.toLocaleLowerCase().replace(/\s+/g,' ').trim();}
+function workoutDate(text) {
+ const today=new Date();
+ const match=text.trimStart().match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?(?:\s|$)/);
+ const date=match ? new Date(Number(match[3] || today.getFullYear()),Number(match[2])-1,Number(match[1])) : today;
+ // This is only a suggestion date, not a reimplementation of the workout parser.
+ const valid=match && date.getDate()===Number(match[1]) && date.getMonth()===Number(match[2])-1;
+ const chosen=valid ? date : today;
+ return chosen.getFullYear()+'-'+String(chosen.getMonth()+1).padStart(2,'0')+'-'+String(chosen.getDate()).padStart(2,'0');
+}
+function dateLabel(date) {const d=new Date(date.length===10 ? date+'T12:00:00' : date);return Number.isNaN(d.getTime()) ? date : d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}
+function allRecords() {return [...state.records,...samples];}
+function showPage(next) {
+ page=next;
+ for (const name of ['workout','history','program','detail']) $(name+'-page').hidden=next!==name;
+ $('completion-bar').hidden=next!=='workout';
+ document.querySelectorAll('[data-page]').forEach(b=>{if(b.dataset.page===next || (next==='detail' && b.dataset.page==='history')) b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');});
+ if(next==='history') renderHistory();
+ if(next==='program') renderPrograms();
+ if(next==='workout') renderDraft();
+}
+function renderDraft() {
+ const hasDraft=!!state.draft;
+ document.querySelectorAll('#workout-page .draft-pill, #workout-page .editor-label, #workout-page .editor-box, #workout-page .helper, #workout-page .syntax, #program-link').forEach(el=>el.hidden=!hasDraft);
+ $('empty-draft').hidden=hasDraft;
+ $('complete').parentElement.hidden=!hasDraft;
+ $('workout-subtitle').textContent=hasDraft?'Like a message to yourself. Nothing is final yet.':'One session in the books. A little stronger than before.';
+ if(!state.draft) {
+  $('workout-heading').textContent='Ready for your next one?';
+  // A blank draft is created only when explicitly starting or editing a session.
+  editor.value='';editor.disabled=true;$('complete').disabled=true;
+ } else {
+  $('workout-heading').textContent='Just write your workout.';
+  editor.disabled=false;editor.value=state.draft.text;caret=editor.value.length;editor.setSelectionRange(caret,caret);storageStatus();updateSuggestions();
+  $('complete').disabled=!editor.value.trim();
+ }
+ $('copy-note').hidden=!state.draft?.copy;
+ $('program-name').textContent=activeProgram().name;
+}
+function lineContext() {
+ const text=editor.value;const pos=Math.min(caret,text.length);
+ const start=text.lastIndexOf('\n',pos-1)+1;const endIndex=text.indexOf('\n',pos);const end=endIndex<0?text.length:endIndex;
+ const line=text.slice(start,end);const match=/(?:^|\s)(?:\d+(?:\.\d{1,2})?)?-\d*/.exec(line);
+ const setIndex=match ? match.index+(match[0].startsWith(' ')?1:0) : line.length;
+ return {start,end,line,name:line.slice(0,setIndex).trim(),setIndex,header:!text.slice(0,start).trim()};
+}
+function makeChip(label, action, target) {const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=label;b.onmousedown=e=>e.preventDefault();b.onclick=action;target.append(b);}
+function updateSuggestions() {
+ if(!state.draft)return;
+ const ctx=lineContext();const title=titleOf(editor.value);$('suggestions').replaceChildren();$('previous-chips').replaceChildren();$('previous').hidden=true;
+ $('complete').disabled=!editor.value.trim();
+ $('suggestion-heading').textContent=ctx.header ? 'Your first line' : 'From your program';
+ $('suggestion-source').textContent=ctx.header ? 'Date + any title' : 'Tap to insert';
+ if(ctx.header){$('suggestion-hint').textContent='Use a date and any workout title. Add a new line for exercise suggestions.';return;}
+ const matches=activeProgram().exercises.filter(n=>normalize(n).includes(normalize(ctx.name)));
+ matches.slice(0,5).forEach(name=>makeChip(name,()=>insertExercise(name),$('suggestions')));
+ $('suggestion-hint').textContent=matches.length ? 'Suggestions follow the line you’re editing.' : 'No program match. Keep typing any exercise name — it’s your note.';
+ const exactName=normalize(ctx.name);
+ const previous=allRecords().filter(r=>normalize(titleOf(r.text))===normalize(title) && title && r.date.slice(0,10)<workoutDate(editor.value)).sort((a,b)=>b.date.localeCompare(a.date)).map(r=>({record:r,line:r.text.split('\n').slice(1).find(line=>{
+  const m=line.trim().match(/^(.*?)\s+((?:\d+(?:\.\d{1,2})?)?-\d*.*)$/);return m && normalize(m[1])===exactName;
+ })})).find(r=>r.line);
+ if(previous) {
+  const sets=previous.line.trim().match(/\s+((?:\d+(?:\.\d{1,2})?)?-\d*.*)$/)[1];
+  const weight=sets.match(/^(\d+(?:\.\d{1,2})?)-/);
+  $('previous').hidden=false;
+  $('previous-label').textContent=`Last time · ${dateLabel(previous.record.date)} · ${titleOf(previous.record.text)}${previous.record.sample?' · sample':''}`;
+  makeChip('Reuse '+sets,()=>insertAtCaret(sets),$('previous-chips'));
+  if(weight)makeChip(weight[1]+' kg → '+weight[1]+'-',()=>insertAtCaret(weight[1]+'-'),$('previous-chips'));
+ } else if(exactName && title && activeProgram().exercises.some(n=>normalize(n)===exactName)) {
+  $('suggestion-hint').textContent=`No earlier-day sets for “${title}” + this exercise. Other workout titles are not used.`;
+ }
+}
+function changed() {state.draft.text=editor.value;caret=editor.selectionStart;persist();updateSuggestions();}
+function insertExercise(name) {
+ if(!state.draft)return;const ctx=lineContext();if(ctx.header)return;
+ // Replace just the exercise-name prefix on the active line, retaining its sets and all other lines.
+ const leading=ctx.line.length-ctx.line.trimStart().length;
+ const end=ctx.start+ctx.setIndex;
+ editor.setRangeText(name+' ',ctx.start+leading,end,'end');editor.focus();changed();
+}
+function insertAtCaret(value) {
+ if(!state.draft)return;
+ const pos=editor.selectionStart;const end=editor.selectionEnd;
+ const before=editor.value[pos-1],after=editor.value[end];
+ const text=(before && !/\s/.test(before)?' ':'')+value+(after && !/\s/.test(after)?' ':'');
+ editor.setRangeText(text,pos,end,'end');editor.focus();changed();
+}
+function renderPrograms() {
+ $('program-list').replaceChildren();programs.forEach(p=>{
+  const card=document.createElement('article');card.className='program-card'+(p.id===state.program?' selected':'');
+  const heading=document.createElement('h3');heading.textContent=p.name;card.append(heading);
+  const list=document.createElement('ul');p.exercises.forEach(n=>{const item=document.createElement('li');item.textContent=n;list.append(item);});card.append(list);
+  const b=document.createElement('button');b.className='secondary';b.textContent=p.id===state.program?'Selected · return to draft':'Use this sample program';b.onclick=()=>{state.program=p.id;persist();showPage('workout');announce('Suggestions updated. Your note is unchanged.');};card.append(b);$('program-list').append(card);
+ });
+}
+function renderHistory() {
+ $('history-list').replaceChildren();allRecords().forEach(r=>{
+  const b=document.createElement('button');b.className='record';
+  const row=document.createElement('div');row.className='record-top';const h=document.createElement('h3');h.textContent=titleOf(r.text)||'Untitled workout';
+  const tag=document.createElement('span');tag.className='tag';tag.textContent=r.sample?'SAMPLE':'COMPLETED';row.append(h,tag);
+  const p=document.createElement('p');p.textContent=dateLabel(r.date)+' · '+(r.text.split('\n').slice(1).filter(l=>l.trim()).length)+' exercise lines';
+  b.append(row,p);b.onclick=()=>openRecord(r);$('history-list').append(b);
+ });
+}
+function openRecord(record) {
+ selectedRecord=record;$('detail-kind').textContent=record.sample?'Sample completed session':'Completed on this device';
+ $('detail-heading').textContent=titleOf(record.text)||'Untitled workout';$('detail-meta').textContent=dateLabel(record.date)+(storageAvailable?' · Stored locally':' · In memory only');
+ if(record.sample)$('detail-meta').textContent=dateLabel(record.date)+' · Demo history';
+ $('snapshot').textContent=record.text;showPage('detail');
+}
+function allowReplaceDraft() {return !state.draft || !state.draft.text.trim() || confirm('Replace your current draft? Its unsaved-to-history text will be removed. Completed sessions will stay unchanged.');}
+function startFresh() {
+ if(!allowReplaceDraft())return;
+ const date=new Date();const pad=n=>String(n).padStart(2,'0');
+ state.draft={text:pad(date.getDate())+'.'+pad(date.getMonth()+1)+'.'+date.getFullYear()+' ',copy:false};persist();showPage('workout');
+}
+editor.addEventListener('input',changed);
+['click','keyup','select','focus'].forEach(event=>editor.addEventListener(event,()=>{caret=editor.selectionStart;updateSuggestions();}));
+document.querySelectorAll('[data-page]').forEach(b=>b.onclick=()=>showPage(b.dataset.page));
+$('program-link').onclick=()=>showPage('program');$('back-history').onclick=()=>showPage('history');$('new-workout').onclick=startFresh;$('start-from-empty').onclick=startFresh;
+$('edit-again').onclick=()=>{
+ if(!selectedRecord || !allowReplaceDraft())return;
+ state.program=selectedRecord.program;state.draft={text:selectedRecord.text,copy:true};persist();showPage('workout');announce('New draft created. The completed original is unchanged.');
+};
+$('complete').onclick=()=>{
+ if(!state.draft || !state.draft.text.trim())return;
+ const record={id:'local-'+Date.now()+'-'+Math.random().toString(36).slice(2),text:state.draft.text,program:state.program,date:workoutDate(state.draft.text),sample:false};
+ state.records.unshift(record);state.draft=null;persist();openRecord(record);announce(storageAvailable?'Workout completed. Snapshot saved on this device.':'Workout completed in memory only. Storage is unavailable.');
+};
+storageStatus();showPage('workout');
+</script>
+</body>
+</html>
