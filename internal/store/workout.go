@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -19,23 +18,6 @@ var selectAliasTarget = `SELECT exercise_id FROM exercise_aliases WHERE user_id 
 const (
 	insertWorkout = `INSERT INTO workouts (user_id, performed_on, workout_type, kcal, protein_g, note, raw_text, source, source_ref, started_at, finished_at, name)
 		VALUES ($1, $2::text::date, NULLIF($3::text, ''), $4, $5, NULLIF($6::text, ''), $7, $8, $9, $10, $11, $12)`
-	// upsertWorkout keeps the workout id on conflict and bumps updated_at.
-	// Wall-clock time plus a microsecond floor keeps revisions distinct even when
-	// concurrent transactions start before waiting for the row lock.
-	// xmax = 0 is true only for a freshly inserted row.
-	upsertWorkout = insertWorkout + ` ON CONFLICT (user_id, source, source_ref) DO UPDATE SET
-			performed_on = EXCLUDED.performed_on,
-			workout_type = EXCLUDED.workout_type,
-			name = EXCLUDED.name,
-			kcal         = EXCLUDED.kcal,
-			protein_g    = EXCLUDED.protein_g,
-			note         = EXCLUDED.note,
-			raw_text     = EXCLUDED.raw_text,
-			started_at   = EXCLUDED.started_at,
-			finished_at  = EXCLUDED.finished_at,
-			updated_at   = GREATEST(clock_timestamp(), workouts.updated_at + interval '1 microsecond')
-		RETURNING id, (xmax = 0), updated_at`
-
 	deleteEntries = `DELETE FROM workout_exercises WHERE workout_id = $1`
 	insertEntry   = `INSERT INTO workout_exercises (workout_id, exercise_id, position, name_as_written)
 		VALUES ($1, $2, $3, $4) RETURNING id`
@@ -44,22 +26,18 @@ const (
 		VALUES ($1, $2, $3::text::numeric, $4)`
 )
 
-// SaveWorkout upserts a workout on (user, source, source_ref) in one transaction.
-// An existing workout keeps its id and has all entries and sets replaced. Entry
-// names resolve alias, then exercise, else a new exercise is created; the names
-// created by this call are returned.
-func (s *Store) SaveWorkout(ctx context.Context, userID int64, req apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
-	resp := apiclient.SaveWorkoutResponse{NewExercises: []string{}}
-
+// CreateWorkout inserts a new workout and its entries in one transaction.
+// Source fields are provenance only; repeated creates receive distinct IDs.
+func (s *Store) CreateWorkout(ctx context.Context, userID int64, req apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
+	resp := apiclient.SaveWorkoutResponse{Created: true, NewExercises: []string{}}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		err := tx.QueryRow(ctx, upsertWorkout,
+		err := tx.QueryRow(ctx, insertWorkout+` RETURNING id, updated_at`,
 			userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG,
 			req.Note, req.RawText, req.Source, req.SourceRef, req.StartedAt, req.FinishedAt, effectiveWorkoutName(req.Name, req.Type),
-		).Scan(&resp.WorkoutID, &resp.Created, &resp.UpdatedAt)
+		).Scan(&resp.WorkoutID, &resp.UpdatedAt)
 		if err != nil {
-			return fmt.Errorf("upsert workout: %w", err)
+			return fmt.Errorf("create workout: %w", err)
 		}
-
 		return replaceWorkoutEntries(ctx, tx, userID, req.Entries, &resp)
 	})
 	if err != nil {
@@ -134,40 +112,22 @@ func replaceWorkoutEntries(ctx context.Context, tx pgx.Tx, userID int64, entries
 }
 
 const (
-	lockWorkout   = `SELECT updated_at FROM workouts WHERE id = $1 AND user_id = $2 FOR UPDATE`
 	updateWorkout = `UPDATE workouts SET performed_on = $3::text::date,
  workout_type = NULLIF($4::text, ''), kcal = $5, protein_g = $6,
- note = NULLIF($7::text, ''), raw_text = $8, started_at = $9, finished_at = $10, name = COALESCE($11::text, name),
+ note = NULLIF($7::text, ''), raw_text = $8, started_at = $9, finished_at = $10, name = COALESCE($11::text, ''),
  updated_at = GREATEST(clock_timestamp(), updated_at + interval '1 microsecond')
  WHERE id = $1 AND user_id = $2 RETURNING updated_at`
 	deleteWorkout = `DELETE FROM workouts WHERE id = $1 AND user_id = $2`
 )
 
-// checkWorkoutRevision locks only an owned row, hiding other users' IDs.
-func checkWorkoutRevision(ctx context.Context, tx pgx.Tx, userID, workoutID int64, expected time.Time) error {
-	var revision time.Time
-	err := tx.QueryRow(ctx, lockWorkout, workoutID, userID).Scan(&revision)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return apperr.ErrWorkoutNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("lock workout: %w", err)
-	}
-	if !revision.Equal(expected) {
-		return apperr.ErrConflict
-	}
-	return nil
-}
-
-// UpdateWorkout replaces content under an ownership/revision lock, preserving identity.
+// UpdateWorkout replaces all content on an owned row, preserving ID and provenance.
 func (s *Store) UpdateWorkout(ctx context.Context, userID, workoutID int64, req apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
 	resp := apiclient.SaveWorkoutResponse{WorkoutID: workoutID, NewExercises: []string{}}
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		err := checkWorkoutRevision(ctx, tx, userID, workoutID, req.ExpectedUpdatedAt)
-		if err != nil {
-			return err
+		err := tx.QueryRow(ctx, updateWorkout, workoutID, userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG, req.Note, req.RawText, req.StartedAt, req.FinishedAt, trimmedWorkoutName(req.Name)).Scan(&resp.UpdatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.ErrWorkoutNotFound
 		}
-		err = tx.QueryRow(ctx, updateWorkout, workoutID, userID, req.PerformedOn, canonicalType(req.Type), req.Kcal, req.ProteinG, req.Note, req.RawText, req.StartedAt, req.FinishedAt, trimmedWorkoutName(req.Name)).Scan(&resp.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("update workout: %w", err)
 		}
@@ -180,19 +140,16 @@ func (s *Store) UpdateWorkout(ctx context.Context, userID, workoutID int64, req 
 	return resp, nil
 }
 
-// DeleteWorkout cascades entries and sets only after the same revision check.
-func (s *Store) DeleteWorkout(ctx context.Context, userID, workoutID int64, expected time.Time) error {
-	return s.inTx(ctx, func(tx pgx.Tx) error {
-		err := checkWorkoutRevision(ctx, tx, userID, workoutID, expected)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(ctx, deleteWorkout, workoutID, userID)
-		if err != nil {
-			return fmt.Errorf("delete workout: %w", err)
-		}
-		return nil
-	})
+// DeleteWorkout deletes an owned workout and cascades its entries and sets.
+func (s *Store) DeleteWorkout(ctx context.Context, userID, workoutID int64) error {
+	result, err := s.pool.Exec(ctx, deleteWorkout, workoutID, userID)
+	if err != nil {
+		return fmt.Errorf("delete workout: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return apperr.ErrWorkoutNotFound
+	}
+	return nil
 }
 
 func trimmedWorkoutName(name *string) *string {

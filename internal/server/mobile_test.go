@@ -48,13 +48,10 @@ func (f *mobileStoreFake) DeleteSession(_ context.Context, tok string) error {
 	f.deletedToken = tok
 	return nil
 }
-func (f *mobileStoreFake) SaveWorkout(_ context.Context, _ int64, req apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
+func (f *mobileStoreFake) CreateWorkout(_ context.Context, _ int64, req apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
 	f.save = req
 	f.calls++
 	return apiclient.SaveWorkoutResponse{WorkoutID: 7, Created: true, UpdatedAt: revision, NewExercises: []string{}}, f.mutationErr
-}
-func (f *mobileStoreFake) CreateWorkout(ctx context.Context, userID int64, req apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
-	return f.SaveWorkout(ctx, userID, req)
 }
 func (f *mobileStoreFake) UpdateWorkout(_ context.Context, userID, workoutID int64, req apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error) {
 	if userID != 1 || workoutID != 7 {
@@ -64,11 +61,10 @@ func (f *mobileStoreFake) UpdateWorkout(_ context.Context, userID, workoutID int
 	f.calls++
 	return apiclient.SaveWorkoutResponse{WorkoutID: 7, UpdatedAt: revision, NewExercises: []string{}}, f.mutationErr
 }
-func (f *mobileStoreFake) DeleteWorkout(_ context.Context, userID, workoutID int64, expected time.Time) error {
+func (f *mobileStoreFake) DeleteWorkout(_ context.Context, userID, workoutID int64) error {
 	if userID != 1 || workoutID != 7 {
 		panic("wrong ownership arguments")
 	}
-	f.expected = expected
 	f.calls++
 	return f.mutationErr
 }
@@ -199,8 +195,8 @@ func TestLogoutRevokesActualSession(t *testing.T) {
 
 func TestOwnedWorkoutWrites(t *testing.T) {
 	create := `{"performed_on":"2026-10-03","raw_text":"x","source":"mobile","source_ref":"550e8400-e29b-41d4-a716-446655440000","entries":[{"name":" squat ","sets":[]}]}`
-	update := `{"performed_on":"2026-10-03","raw_text":"x","entries":[{"name":" squat ","sets":[]}],"expected_updated_at":"2026-10-03T12:00:00.123456Z"}`
-	del := `{"expected_updated_at":"2026-10-03T12:00:00.123456Z"}`
+	update := `{"performed_on":"2026-10-03","raw_text":"x","entries":[{"name":" squat ","sets":[]}]}`
+	del := ""
 	tests := []struct {
 		name, method, path, body, auth, cookie, csrf, contentType string
 		status                                                    int
@@ -216,12 +212,16 @@ func TestOwnedWorkoutWrites(t *testing.T) {
 		{"cookie valid", "POST", "/v1/users/1/workouts", create, "", "cookie", "1", "application/json; charset=utf-8", 201, nil},
 		{"native update historical empty sets", "PUT", "/v1/users/1/workouts/7", update, "Bearer native", "", "", "application/json", 200, nil},
 		{"update cannot change source", "PUT", "/v1/users/1/workouts/7", strings.Replace(update, `"raw_text":"x"`, `"raw_text":"x","source":"mobile"`, 1), "Bearer native", "", "", "application/json", 400, nil},
-		{"update missing revision", "PUT", "/v1/users/1/workouts/7", `{"performed_on":"2026-10-03","raw_text":"x"}`, "Bearer native", "", "", "application/json", 400, nil},
-		{"update conflict", "PUT", "/v1/users/1/workouts/7", update, "Bearer native", "", "", "application/json", 409, apperr.ErrConflict},
+		{"update without revision", "PUT", "/v1/users/1/workouts/7", `{"performed_on":"2026-10-03","raw_text":"x","entries":[{"name":"squat"}]}`, "Bearer native", "", "", "application/json", 200, nil},
+		{"update rejects obsolete revision", "PUT", "/v1/users/1/workouts/7", strings.Replace(update, `"raw_text":"x"`, `"raw_text":"x","expected_updated_at":"2026-10-03T12:00:00Z"`, 1), "Bearer native", "", "", "application/json", 400, nil},
+		{"update wrong user", "PUT", "/v1/users/2/workouts/7", update, "Bearer native", "", "", "application/json", 403, nil},
+		{"bot update", "PUT", "/v1/users/1/workouts/7", update, "Bearer bot-secret", "", "", "application/json", 200, nil},
 		{"update missing", "PUT", "/v1/users/1/workouts/7", update, "Bearer native", "", "", "application/json", 404, apperr.ErrWorkoutNotFound},
 		{"delete", "DELETE", "/v1/users/1/workouts/7", del, "Bearer native", "", "", "application/json", 204, nil},
-		{"delete conflict", "DELETE", "/v1/users/1/workouts/7", del, "Bearer native", "", "", "application/json", 409, apperr.ErrConflict},
-		{"delete missing revision", "DELETE", "/v1/users/1/workouts/7", `{}`, "Bearer native", "", "", "application/json", 400, nil},
+		{"delete empty object", "DELETE", "/v1/users/1/workouts/7", `{}`, "Bearer native", "", "", "application/json", 204, nil},
+		{"delete missing", "DELETE", "/v1/users/1/workouts/7", del, "Bearer native", "", "", "", 404, apperr.ErrWorkoutNotFound},
+		{"bot delete", "DELETE", "/v1/users/1/workouts/7", del, "Bearer bot-secret", "", "", "", 204, nil},
+		{"cookie bodyless delete", "DELETE", "/v1/users/1/workouts/7", del, "", "cookie", "1", "application/json", 204, nil},
 		{"delete wrong user", "DELETE", "/v1/users/2/workouts/7", del, "Bearer native", "", "", "application/json", 403, nil},
 		{"cookie delete missing header", "DELETE", "/v1/users/1/workouts/7", del, "", "cookie", "", "application/json", 403, nil},
 	}
@@ -240,11 +240,8 @@ func TestOwnedWorkoutWrites(t *testing.T) {
 			if tt.status == 201 && f.save.Entries[0].Name != "squat" {
 				t.Fatal("name not trimmed")
 			}
-			if tt.status == 200 && (!f.update.ExpectedUpdatedAt.Equal(revision) || f.update.Entries[0].Name != "squat") {
-				t.Fatal("update lost revision/name")
-			}
-			if tt.status == 204 && !f.expected.Equal(revision) {
-				t.Fatal("delete lost precision")
+			if tt.status == 200 && f.update.Entries[0].Name != "squat" {
+				t.Fatal("update lost name")
 			}
 			if tt.status == 404 && !strings.Contains(w.Body.String(), "workout_not_found") {
 				t.Fatal("wrong not-found code")

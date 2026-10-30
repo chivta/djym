@@ -43,7 +43,9 @@ type draft struct {
 	PreviewIDs []int
 	// Suspects is the ordered list of suspected names of the last render.
 	Suspects []suspectRef
-	// SavedWorkoutID is set after a save and cleared by an edit; 0 means not saved.
+	// WorkoutID remains the edit target even when the preview becomes unsaved.
+	WorkoutID int64
+	// SavedWorkoutID marks whether the current preview matches the saved workout.
 	SavedWorkoutID int64
 }
 
@@ -55,6 +57,7 @@ type draftRecord struct {
 	PreviewIDs     []int
 	Suspects       []suspectRef
 	SavedWorkoutID int64
+	WorkoutID      int64
 }
 
 func (d *draft) record() draftRecord {
@@ -65,7 +68,7 @@ func (d *draft) record() draftRecord {
 		}
 	}
 	return draftRecord{Text: d.Text, Posted: d.Posted, Kept: kept, PreviewIDs: d.PreviewIDs,
-		Suspects: d.Suspects, SavedWorkoutID: d.SavedWorkoutID}
+		Suspects: d.Suspects, SavedWorkoutID: d.SavedWorkoutID, WorkoutID: d.WorkoutID}
 }
 
 func (r draftRecord) draft() *draft {
@@ -74,7 +77,7 @@ func (r draftRecord) draft() *draft {
 		kept[k] = true
 	}
 	return &draft{Text: r.Text, Posted: r.Posted.In(postZone), Kept: kept, PreviewIDs: r.PreviewIDs,
-		Suspects: r.Suspects, SavedWorkoutID: r.SavedWorkoutID}
+		Suspects: r.Suspects, SavedWorkoutID: r.SavedWorkoutID, WorkoutID: r.WorkoutID}
 }
 
 type draftEntry struct {

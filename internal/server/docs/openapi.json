@@ -252,7 +252,7 @@
       },
       "post": {
         "operationId": "saveWorkout",
-        "summary": "Create or upsert a workout",
+        "summary": "Create a workout",
         "tags": [
           "Workouts"
         ],
@@ -268,16 +268,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Existing workout replaced, or identical session-create replay.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SaveWorkoutResponse"
-                }
-              }
-            }
-          },
           "201": {
             "description": "Workout created.",
             "content": {
@@ -328,16 +318,6 @@
               }
             }
           },
-          "409": {
-            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
           "500": {
             "description": "Internal error (internal).",
             "content": {
@@ -349,7 +329,7 @@
             }
           }
         },
-        "description": "Service credentials upsert by source/source_ref. User sessions create only with source=mobile and a UUID source_ref; identical replays return the existing workout, changed replays return 409. Sessions can access only their own user ID.",
+        "description": "Always creates a new workout, even when source/source_ref match an existing workout. Source fields are provenance only. User sessions require source=mobile and a UUID source_ref and can access only their own user ID.",
         "requestBody": {
           "required": true,
           "content": {
@@ -390,7 +370,7 @@
     "/v1/users/{id}/workouts/{workout_id}": {
       "put": {
         "operationId": "updateWorkout",
-        "summary": "Replace workout content at a revision",
+        "summary": "Fully replace workout content by ID",
         "tags": [
           "Workouts"
         ],
@@ -456,16 +436,6 @@
               }
             }
           },
-          "409": {
-            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
           "500": {
             "description": "Internal error (internal).",
             "content": {
@@ -522,11 +492,12 @@
             },
             "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
           }
-        ]
+        ],
+        "description": "Replaces all mutable content of an owned workout. Omitted optional fields clear stored values, including name. ID and source/source_ref are preserved. No revision precondition; later writes replace earlier content."
       },
       "delete": {
         "operationId": "deleteWorkout",
-        "summary": "Delete a workout at a revision",
+        "summary": "Delete a workout by ID",
         "tags": [
           "Workouts"
         ],
@@ -585,16 +556,6 @@
               }
             }
           },
-          "409": {
-            "description": "Revision/replay/uniqueness conflict (conflict), or bad_name_is_alias.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
           "500": {
             "description": "Internal error (internal).",
             "content": {
@@ -602,16 +563,6 @@
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeleteWorkoutRequest"
               }
             }
           }
@@ -651,7 +602,8 @@
             },
             "description": "Required with Content-Type: application/json for cookie-authenticated workout/program mutations; not required for bearer credentials."
           }
-        ]
+        ],
+        "description": "Deletes an owned workout and its entries and sets without a revision precondition. No request body is required. Missing or unowned workout IDs return 404."
       }
     },
     "/v1/users/{id}/programs": {
@@ -1885,7 +1837,7 @@
           "name": {
             "type": "string",
             "maxLength": 2000,
-            "description": "Trimmed; blank/absent uses type or a generated default.",
+            "description": "Trimmed; absent/null defaults to the canonical type (or empty string when no type). Explicit blank is stored as an empty string.",
             "nullable": true
           },
           "type": {
@@ -1934,10 +1886,10 @@
           "source_ref": {
             "type": "string",
             "minLength": 1,
-            "description": "Session creates require a UUID. Service source/source_ref identifies the workout to upsert."
+            "description": "Provenance only, never an upsert or replay key. Session creates require a UUID."
           }
         },
-        "description": "Replaces complete workout content. started_at and finished_at must be both present or both absent/null; finish must not precede start. Absent times clear previous times. Entry and set order is significant; both may be empty.",
+        "description": "Creates a new workout on every request, even with duplicate source/source_ref. started_at and finished_at must be both present or both absent/null; finish must not precede start. Entry and set order is significant; both may be empty.",
         "required": [
           "performed_on",
           "raw_text",
@@ -1955,7 +1907,7 @@
           "name": {
             "type": "string",
             "maxLength": 2000,
-            "description": "Trimmed; blank/absent uses type or a generated default.",
+            "description": "Trimmed; omitted, null, or blank clears the name to an empty string.",
             "nullable": true
           },
           "type": {
@@ -1995,31 +1947,13 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
-          },
-          "expected_updated_at": {
-            "type": "string",
-            "format": "date-time"
           }
         },
         "additionalProperties": false,
-        "description": "Full replacement of content without changing source/source_ref. Paired time rules match SaveWorkoutRequest. expected_updated_at must equal the current stored revision.",
+        "description": "Full replacement of content without changing ID or source/source_ref. Omitted optional fields clear stored values, including name, type, intake, note, times, and entries. Paired time rules match SaveWorkoutRequest. No revision token is accepted.",
         "required": [
           "performed_on",
-          "raw_text",
-          "expected_updated_at"
-        ]
-      },
-      "DeleteWorkoutRequest": {
-        "type": "object",
-        "properties": {
-          "expected_updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "expected_updated_at"
+          "raw_text"
         ]
       },
       "SaveWorkoutResponse": {
@@ -2049,7 +1983,8 @@
           "workout_id",
           "created",
           "new_exercises"
-        ]
+        ],
+        "description": "Create or replacement result: created is true for POST and false for PUT. updated_at is modification metadata, not a required revision token."
       },
       "WorkoutEntry": {
         "type": "object",
@@ -2130,7 +2065,8 @@
           },
           "updated_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "description": "UTC modification metadata at database precision; not a mutation precondition."
           },
           "entries": {
             "type": "array",

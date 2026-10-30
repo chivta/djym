@@ -17,6 +17,7 @@ type documentedOperation struct {
 	OperationID string                      `json:"operationId"`
 	Security    []map[string][]string       `json:"security"`
 	Responses   map[string]json.RawMessage  `json:"responses"`
+	RequestBody json.RawMessage             `json:"requestBody"`
 	Parameters  []struct{ Name, In string } `json:"parameters"`
 }
 
@@ -195,7 +196,7 @@ func TestOpenAPISchemasMatchWireFields(t *testing.T) {
 	spec := loadOpenAPI(t)
 	for _, wire := range []any{
 		apiclient.ResolveIdentityRequest{}, apiclient.ResolveIdentityResponse{},
-		apiclient.SaveWorkoutRequest{}, apiclient.UpdateWorkoutRequest{}, apiclient.DeleteWorkoutRequest{},
+		apiclient.SaveWorkoutRequest{}, apiclient.UpdateWorkoutRequest{},
 		apiclient.Entry{}, apiclient.Set{}, apiclient.SaveWorkoutResponse{},
 		apiclient.Exercise{}, apiclient.ListExercisesResponse{}, apiclient.ReplaceExerciseRequest{}, apiclient.ReplaceExerciseResponse{},
 		apiclient.Workout{}, apiclient.WorkoutEntry{}, apiclient.ListWorkoutsResponse{},
@@ -220,7 +221,7 @@ func TestOpenAPISchemasMatchWireFields(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"UpdateWorkoutRequest", "DeleteWorkoutRequest", "CreateProgramRequest", "UpdateProgramRequest", "DeleteProgramRequest"} {
+	for _, name := range []string{"UpdateWorkoutRequest", "CreateProgramRequest", "UpdateProgramRequest", "DeleteProgramRequest"} {
 		strict := spec.Components.Schemas[name].AdditionalProperties
 		if strict == nil || *strict {
 			t.Errorf("%s must document rejection of unknown fields", name)
@@ -233,5 +234,35 @@ func TestOpenAPISchemasMatchWireFields(t *testing.T) {
 	docsRouter(t).ServeHTTP(w, req)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"user_id":1`) {
 		t.Fatal("session bearer no longer works")
+	}
+}
+
+func TestOpenAPIWorkoutCRUDContract(t *testing.T) {
+	spec := loadOpenAPI(t)
+	post := spec.Paths["/v1/users/{id}/workouts"]["post"]
+	if _, ok := post.Responses["201"]; !ok {
+		t.Fatal("POST must document creation")
+	}
+	if _, ok := post.Responses["200"]; ok {
+		t.Fatal("POST must not document replay/upsert")
+	}
+	mutations := spec.Paths["/v1/users/{id}/workouts/{workout_id}"]
+	for _, op := range []documentedOperation{post, mutations["put"], mutations["delete"]} {
+		if _, ok := op.Responses["409"]; ok {
+			t.Fatal("workout mutation documents obsolete revision/replay conflict")
+		}
+	}
+	if len(mutations["delete"].RequestBody) != 0 {
+		t.Fatal("DELETE must not require a body")
+	}
+	if _, ok := spec.Components.Schemas["DeleteWorkoutRequest"]; ok {
+		t.Fatal("obsolete DELETE revision schema")
+	}
+	if _, ok := spec.Components.Schemas["UpdateWorkoutRequest"].Properties["expected_updated_at"]; ok {
+		t.Fatal("obsolete PUT revision token")
+	}
+	// Programs deliberately keep their independent revision contract.
+	if _, ok := spec.Components.Schemas["UpdateProgramRequest"].Properties["expected_updated_at"]; !ok {
+		t.Fatal("program revision was removed")
 	}
 }

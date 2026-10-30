@@ -1,6 +1,6 @@
 // Package bot is the Telegram front end of the workout logger: it previews
 // workout messages, resolves exercise-name typos and saves through the API.
-// State is the API, an in-memory draft cache and a SQLite file of first-save times.
+// State is the API, an in-memory draft cache and SQLite saved-message state.
 package bot
 
 import (
@@ -58,7 +58,7 @@ type Bot struct {
 	tg        *tele.Bot
 	out       *sender
 	drafts    *draftCache
-	state     *state.Store // first-save times and drafts, survives restarts
+	state     *state.Store // saved workout IDs, first-save times and drafts; survives restarts
 	allowedID int64
 	userID    atomic.Int64 // internal user ID, 0 until resolved
 	// redact hides the bot token in error text: telebot errors can embed the request URL.

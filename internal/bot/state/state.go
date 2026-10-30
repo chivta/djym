@@ -1,6 +1,5 @@
-// Package state is the bot's small SQLite store: the time each message was
-// first saved and the draft cache's write-through copy, both of which must
-// outlive restarts.
+// Package state is the bot's small SQLite store: saved workout IDs, first-save
+// times, and the draft cache's write-through copy, all of which outlive restarts.
 package state
 
 import (
@@ -21,6 +20,12 @@ const schema = `CREATE TABLE IF NOT EXISTS first_saves (
 	chat_id         INTEGER NOT NULL,
 	message_id      INTEGER NOT NULL,
 	first_saved_at  INTEGER NOT NULL, -- unix seconds
+	PRIMARY KEY (chat_id, message_id)
+);
+CREATE TABLE IF NOT EXISTS saved_workouts (
+	chat_id     INTEGER NOT NULL,
+	message_id  INTEGER NOT NULL,
+	workout_id  INTEGER NOT NULL,
 	PRIMARY KEY (chat_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS drafts (
@@ -49,7 +54,7 @@ const (
 	deleteDraft        = `DELETE FROM drafts WHERE chat_id = ? AND message_id = ?`
 )
 
-// Store holds the first-save time per (chat, message), in unix seconds.
+// Store holds saved workout targets, first-save times, and cached drafts.
 type Store struct {
 	db *sql.DB
 }
@@ -92,6 +97,36 @@ func (s *Store) SetFirstSave(ctx context.Context, chatID int64, msgID int, t tim
 		return fmt.Errorf("insert first save: %w", err)
 	}
 	return nil
+}
+
+// WorkoutID returns the durable API target, independent of draft expiration.
+func (s *Store) WorkoutID(ctx context.Context, chatID int64, msgID int) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT workout_id FROM saved_workouts WHERE chat_id=? AND message_id=?`, chatID, msgID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("select saved workout: %w", err)
+	}
+	return id, nil
+}
+
+// SetWorkoutSave records the API target and first-save time atomically.
+func (s *Store) SetWorkoutSave(ctx context.Context, chatID int64, msgID int, id int64, firstSaved time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, insertFirstSave, chatID, msgID, firstSaved.Unix()); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO saved_workouts (chat_id,message_id,workout_id) VALUES (?,?,?)
+ ON CONFLICT (chat_id,message_id) DO UPDATE SET workout_id=excluded.workout_id`, chatID, msgID, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // Draft is a stored draft: an opaque payload and the time it was last touched.

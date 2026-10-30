@@ -39,9 +39,8 @@ type handlerStore interface {
 	UpdateProgram(context.Context, int64, string, apiclient.UpdateProgramRequest) (apiclient.Program, error)
 	DeleteProgram(context.Context, int64, string, time.Time) error
 	CreateWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
-	SaveWorkout(context.Context, int64, apiclient.SaveWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
 	UpdateWorkout(context.Context, int64, int64, apiclient.UpdateWorkoutRequest) (apiclient.SaveWorkoutResponse, error)
-	DeleteWorkout(context.Context, int64, int64, time.Time) error
+	DeleteWorkout(context.Context, int64, int64) error
 	ListWorkouts(context.Context, int64, int, string) (apiclient.ListWorkoutsResponse, error)
 	ListExercises(context.Context, int64) ([]apiclient.Exercise, error)
 	ReplaceExercise(context.Context, int64, string, string) (apiclient.ReplaceExerciseResponse, error)
@@ -90,7 +89,7 @@ func (h *handlers) resolveIdentity(c *gin.Context) {
 	c.JSON(http.StatusOK, apiclient.ResolveIdentityResponse{UserID: userID})
 }
 
-// saveWorkout answers 201 when the workout was created and 200 when an existing one was replaced.
+// saveWorkout always creates a new workout and answers 201.
 func (h *handlers) saveWorkout(c *gin.Context) {
 	userID, ok := h.bindUser(c)
 	if !ok {
@@ -116,22 +115,12 @@ func (h *handlers) saveWorkout(c *gin.Context) {
 		return
 	}
 
-	var resp apiclient.SaveWorkoutResponse
-	var err error
-	if currentPrincipal(c).service {
-		resp, err = h.store.SaveWorkout(c.Request.Context(), userID, req)
-	} else {
-		resp, err = h.store.CreateWorkout(c.Request.Context(), userID, req)
-	}
+	resp, err := h.store.CreateWorkout(c.Request.Context(), userID, req)
 	if err != nil {
 		respondWithError(c, err)
 		return
 	}
-	status := http.StatusOK
-	if resp.Created {
-		status = http.StatusCreated
-	}
-	c.JSON(status, resp)
+	c.JSON(http.StatusCreated, resp)
 }
 
 // listWorkouts serves one keyset page of workouts, newest first.
@@ -277,11 +266,7 @@ func (h *handlers) deleteWorkout(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var req apiclient.DeleteWorkoutRequest
-	if !h.bindStrictJSON(c, &req) || !h.valid(c, req) {
-		return
-	}
-	err := h.store.DeleteWorkout(c.Request.Context(), uri.ID, uri.WorkoutID, req.ExpectedUpdatedAt)
+	err := h.store.DeleteWorkout(c.Request.Context(), uri.ID, uri.WorkoutID)
 	if err != nil {
 		respondWithError(c, err)
 		return
@@ -289,7 +274,7 @@ func (h *handlers) deleteWorkout(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// New revision endpoints reject unknown fields, especially source identity edits.
+// Replacement endpoints reject unknown fields, especially source provenance edits.
 func (h *handlers) bindStrictJSON(c *gin.Context, req any) bool {
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()

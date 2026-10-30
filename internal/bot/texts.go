@@ -31,13 +31,14 @@ const (
 	txtBtnPick = "btn_pick"
 	txtBtnKeep = "btn_keep"
 
-	txtCbDraftMissing = "cb_draft_missing"
-	txtCbStale        = "cb_stale"
-	txtCbSaved        = "cb_saved"
-	txtCbStateFailed  = "cb_state_failed"
-	txtCbCannotSave   = "cb_cannot_save"
-	txtCbPlanned      = "cb_planned"
-	txtCbDone         = "cb_done"
+	txtCbDraftMissing   = "cb_draft_missing"
+	txtCbStale          = "cb_stale"
+	txtCbSaved          = "cb_saved"
+	txtCbStateFailed    = "cb_state_failed"
+	txtCbRecoveryFailed = "cb_recovery_failed"
+	txtCbCannotSave     = "cb_cannot_save"
+	txtCbPlanned        = "cb_planned"
+	txtCbDone           = "cb_done"
 
 	txtNewExercisesHead = "new_exercises_head"
 	txtNewExerciseItem  = "new_exercise_item"
@@ -88,13 +89,14 @@ var texts = map[string]string{
 	txtBtnPick: "%s → %s",
 	txtBtnKeep: "Keep \"%s\" as new",
 
-	txtCbDraftMissing: "This message is no longer tracked. Edit it or send it again.",
-	txtCbStale:        "The suggestions changed, refreshed.",
-	txtCbSaved:        "Saved.",
-	txtCbStateFailed:  "Could not read the saved time. Try again.",
-	txtCbCannotSave:   "Cannot save yet, refreshed.",
-	txtCbPlanned:      "Unfinished sets, cannot save yet.",
-	txtCbDone:         "Done.",
+	txtCbDraftMissing:   "This message is no longer tracked. Edit it or send it again.",
+	txtCbStale:          "The suggestions changed, refreshed.",
+	txtCbSaved:          "Saved.",
+	txtCbStateFailed:    "Could not read or record the saved workout state. Try again.",
+	txtCbCannotSave:     "Cannot save yet, refreshed.",
+	txtCbRecoveryFailed: "Cannot identify the previously saved workout (missing, ambiguous, or outside the recovery limit). No workout was created. Check the workout history.",
+	txtCbPlanned:        "Unfinished sets, cannot save yet.",
+	txtCbDone:           "Done.",
 
 	txtNewExercisesHead: "<b>New exercises created:</b>",
 	txtNewExerciseItem:  "• %s: <code>/alias_exercise %s =&gt; existing exercise</code>",
@@ -123,6 +125,7 @@ var texts = map[string]string{
 
 	prefixAPICode + apiclient.CodeInvalidRequest:   "The API rejected the request.",
 	prefixAPICode + apiclient.CodeUnauthorized:     "The API rejected the bot's secret.",
+	prefixAPICode + apiclient.CodeWorkoutNotFound:  "The saved workout no longer exists. No workout was created.",
 	prefixAPICode + apiclient.CodeUserNotFound:     "The user was not found.",
 	prefixAPICode + apiclient.CodeSameExercise:     "Both names are already the same exercise.",
 	prefixAPICode + apiclient.CodeExerciseNotFound: "No such exercise. Check /exercises.",

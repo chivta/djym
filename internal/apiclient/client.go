@@ -39,10 +39,21 @@ func (c *Client) ResolveIdentity(ctx context.Context, req ResolveIdentityRequest
 	return resp, err
 }
 
-func (c *Client) SaveWorkout(ctx context.Context, userID int64, req SaveWorkoutRequest) (SaveWorkoutResponse, error) {
+func (c *Client) CreateWorkout(ctx context.Context, userID int64, req SaveWorkoutRequest) (SaveWorkoutResponse, error) {
 	var resp SaveWorkoutResponse
 	err := c.do(ctx, http.MethodPost, fmt.Sprintf("/v1/users/%d/workouts", userID), req, &resp)
 	return resp, err
+}
+
+// UpdateWorkout fully replaces content by ID, without a revision precondition.
+func (c *Client) UpdateWorkout(ctx context.Context, userID, workoutID int64, req UpdateWorkoutRequest) (SaveWorkoutResponse, error) {
+	var resp SaveWorkoutResponse
+	err := c.do(ctx, http.MethodPut, fmt.Sprintf("/v1/users/%d/workouts/%d", userID, workoutID), req, &resp)
+	return resp, err
+}
+
+func (c *Client) DeleteWorkout(ctx context.Context, userID, workoutID int64) error {
+	return c.do(ctx, http.MethodDelete, fmt.Sprintf("/v1/users/%d/workouts/%d", userID, workoutID), nil, nil)
 }
 
 // ListWorkouts returns one page of the user's workouts, newest first. Pass the

@@ -30,7 +30,7 @@ func TestWorkoutNameHTTP(t *testing.T) {
 					body = programJSON(t, apiclient.SaveWorkoutRequest{PerformedOn: "2026-10-01", Name: tc.value, Type: "upper", RawText: "original", Source: "mobile", SourceRef: testProgramID})
 				} else {
 					path += "/7"
-					body = programJSON(t, apiclient.UpdateWorkoutRequest{PerformedOn: "2026-10-01", Name: tc.value, Type: "upper", RawText: "original", ExpectedUpdatedAt: revision})
+					body = programJSON(t, apiclient.UpdateWorkoutRequest{PerformedOn: "2026-10-01", Name: tc.value, Type: "upper", RawText: "original"})
 				}
 				want := tc.status
 				if method == "POST" && want == 200 {

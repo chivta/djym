@@ -50,10 +50,39 @@ Local HTTP browser login requires `COOKIE_SECURE=false`; use HTTPS or native
 bearer login otherwise. No local secret or cookie setting is changed by this
 feature. Try it out sends real requests and mutations to the same API origin.
 
+## Workout CRUD
+
+- **POST /v1/users/{id}/workouts** always creates a new workout and returns
+  `201` with a new `workout_id`. Repeating the same request creates another
+  record; `source` and `source_ref` are provenance, not an upsert/replay key.
+  User sessions still require `source=mobile` and a UUID `source_ref`.
+- **GET /v1/users/{id}/workouts** reads paginated workouts, newest first.
+- **PUT /v1/users/{id}/workouts/{workout_id}** fully replaces mutable content
+  and returns `200`. Omitted optional fields clear stored values (including
+  `name`, type, intake, note, times, and entries). ID and source provenance are
+  preserved. `performed_on` and `raw_text` remain required. On creation only,
+  an omitted/null name defaults to the canonical type, or an empty string.
+- **DELETE /v1/users/{id}/workouts/{workout_id}** deletes by ID and returns
+  `204`. No body is required. Cookie callers still need JSON Content-Type and
+  `X-Gymbro-Write: 1`, even for a bodyless DELETE.
+
+Workout PUT/DELETE have no revision checks or `expected_updated_at` request
+field. `updated_at` remains response metadata. Missing/unowned workout IDs
+return `404`; session callers cannot access other users' routes. Program
+revision/replay behavior is unchanged.
+
+The bot POSTs for a new message and PUTs its saved workout ID on later saves
+or edits. Its SQLite state retains that ID beyond draft expiry and restarts.
+For previously saved messages without a local ID, it scans up to 1000 workouts
+via GET for a unique provenance match. Missing, ambiguous, or truncated recovery
+never creates a replacement record; a deleted known ID stays a not-found error.
+POST is not retried automatically: a lost response can leave an untracked saved
+workout, so avoid blindly repeating an uncertain create.
+
 ## Maintaining the contract
 
 `internal/server/docs/openapi.json` describes all existing API operations, wire
-schemas, revision fields, pagination, and authentication. Update it alongside
+schemas, workout CRUD, program revision fields, pagination, and authentication. Update it alongside
 handler or wire-type changes. Rebuild/restart the API after editing the embedded
 HTML or JSON (the existing Air watcher watches Go and SQL, not these assets).
 

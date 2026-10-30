@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"errors"
 	"html"
 	"sort"
 	"strings"
@@ -74,7 +75,10 @@ func (b *Bot) onEdited(c tele.Context) error {
 	defer b.drafts.persist(b.ctx, key, d)
 	d.Text = msg.Text
 	d.Posted = msg.Time().In(postZone)
-	d.SavedWorkoutID = 0 // the saved workout no longer matches the text
+	if d.WorkoutID == 0 {
+		d.WorkoutID = d.SavedWorkoutID
+	}
+	d.SavedWorkoutID = 0 // retain the target while clearing the saved marker
 	return b.refreshPreview(msg, d)
 }
 
@@ -267,7 +271,7 @@ func (b *Bot) onPick(cb *tele.Callback, userMsg *tele.Message, d *draft, data ca
 // onSave re-parses the cached text (refusing planned sets) and re-checks the names against the API:
 // nothing from render time is trusted. On success the preview keeps its
 // content and Save button and gains a "saved" line (an edit clears the line,
-// and Save can be pressed again: same source_ref, so the API updates the workout).
+// and Save can be pressed again to PUT the retained workout ID).
 func (b *Bot) onSave(cb *tele.Callback, userMsg *tele.Message, d *draft) error {
 	w, err := parser.Parse(d.Text, d.Posted)
 	if err != nil {
@@ -303,18 +307,17 @@ func (b *Bot) onSave(cb *tele.Callback, userMsg *tele.Message, d *draft) error {
 	defer cancel()
 	req := saveRequest(w, d.Text, b.tg.Me.ID, userMsg)
 	req.StartedAt, req.FinishedAt = workoutTimes(d.Posted, firstSaved)
-	resp, err := b.api.SaveWorkout(ctx, userID, req)
+	resp, err := b.saveWorkout(ctx, userID, userMsg.Chat.ID, userMsg.ID, d, req, firstSaved, known)
 	if err != nil {
+		if errors.Is(err, errWorkoutState) {
+			log.Error().Err(err).Str("op", "workout_save_state").Msg("state call failed")
+			return b.out.answer(b.ctx, cb, plain(txtCbStateFailed), true)
+		}
+		if errors.Is(err, errWorkoutRecovery) {
+			return b.out.answer(b.ctx, cb, plain(txtCbRecoveryFailed), true)
+		}
 		logAPIError("save_workout", err)
 		return b.out.answer(b.ctx, cb, apiErrorPlain(err), true)
-	}
-	// Stored only after the API accepted the save, so a failed save does not fix the time.
-	// Failing here loses nothing but the first-save time; the workout is saved.
-	if !known {
-		err = b.state.SetFirstSave(b.ctx, userMsg.Chat.ID, userMsg.ID, firstSaved)
-		if err != nil {
-			log.Error().Err(err).Str("op", "first_save_set").Msg("state call failed")
-		}
 	}
 
 	d.SavedWorkoutID = resp.WorkoutID
@@ -348,7 +351,9 @@ func workoutTimes(posted, firstSaved time.Time) (started, finished *time.Time) {
 // saveRequest builds the API request from a parse. botID is the bot's own
 // Telegram id, which leads the source_ref (see sourceRef).
 func saveRequest(w parser.Workout, rawText string, botID int64, userMsg *tele.Message) apiclient.SaveWorkoutRequest {
+	name := w.Type
 	req := apiclient.SaveWorkoutRequest{
+		Name:        &name,
 		PerformedOn: w.Date.Format(dateLayout),
 		Type:        w.Type,
 		Kcal:        w.Kcal,

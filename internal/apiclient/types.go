@@ -40,8 +40,8 @@ type ResolveIdentityResponse struct {
 // SaveWorkoutRequest is one parsed workout. Type and Note are empty when absent.
 // Type is matched case-insensitively against workout.Types and stored canonically.
 // PerformedOn is an ISO date (YYYY-MM-DD). StartedAt and FinishedAt (RFC 3339)
-// are both set or both absent, with FinishedAt not before StartedAt; a save
-// stores them as given, so absent clears any earlier values.
+// are both set or both absent, with FinishedAt not before StartedAt.
+// Source and SourceRef are provenance only; every POST creates a new workout.
 type SaveWorkoutRequest struct {
 	PerformedOn string     `json:"performed_on"       validate:"required,datetime=2006-01-02"`
 	Name        *string    `json:"name,omitempty" validate:"omitempty,max=2000"`
@@ -57,23 +57,19 @@ type SaveWorkoutRequest struct {
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
-// UpdateWorkoutRequest replaces content without changing source identity.
+// UpdateWorkoutRequest replaces all content without changing ID or source
+// provenance. Omitted optional fields clear stored values, including Name.
 type UpdateWorkoutRequest struct {
-	PerformedOn       string     `json:"performed_on"       validate:"required,datetime=2006-01-02"`
-	Name              *string    `json:"name,omitempty" validate:"omitempty,max=2000"`
-	Type              string     `json:"type,omitempty"     validate:"omitempty,workout_type"`
-	Kcal              *int       `json:"kcal,omitempty"     validate:"omitempty,gte=0"`
-	ProteinG          *int       `json:"protein_g,omitempty" validate:"omitempty,gte=0"`
-	Note              string     `json:"note,omitempty"`
-	RawText           string     `json:"raw_text"           validate:"required"`
-	Entries           []Entry    `json:"entries"            validate:"dive"`
-	StartedAt         *time.Time `json:"started_at,omitempty"`
-	FinishedAt        *time.Time `json:"finished_at,omitempty"`
-	ExpectedUpdatedAt time.Time  `json:"expected_updated_at" validate:"required"`
-}
-
-type DeleteWorkoutRequest struct {
-	ExpectedUpdatedAt time.Time `json:"expected_updated_at" validate:"required"`
+	PerformedOn string     `json:"performed_on"       validate:"required,datetime=2006-01-02"`
+	Name        *string    `json:"name,omitempty" validate:"omitempty,max=2000"`
+	Type        string     `json:"type,omitempty"     validate:"omitempty,workout_type"`
+	Kcal        *int       `json:"kcal,omitempty"     validate:"omitempty,gte=0"`
+	ProteinG    *int       `json:"protein_g,omitempty" validate:"omitempty,gte=0"`
+	Note        string     `json:"note,omitempty"`
+	RawText     string     `json:"raw_text"           validate:"required"`
+	Entries     []Entry    `json:"entries"            validate:"dive"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
 // Entry is one exercise line; its position is its index in the list. Sets may be empty.
@@ -89,7 +85,7 @@ type Set struct {
 	Reps   int    `json:"reps"   validate:"gte=1"`
 }
 
-// SaveWorkoutResponse reports the upsert result. NewExercises lists the exercise
+// SaveWorkoutResponse reports the create or replacement result. NewExercises lists the exercise
 // names created by this save (deduplicated), so typos can be fixed right away.
 type SaveWorkoutResponse struct {
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -122,7 +118,7 @@ type ReplaceExerciseResponse struct {
 
 // Workout is one stored workout as returned by the list endpoint. Absent optional
 // fields are null. PerformedOn is an ISO date; StartedAt and FinishedAt are UTC.
-// UpdatedAt is the UTC revision at database precision.
+// UpdatedAt is UTC modification metadata at database precision.
 type Workout struct {
 	ID          int64          `json:"id"`
 	Name        string         `json:"name"`

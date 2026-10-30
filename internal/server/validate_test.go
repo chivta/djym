@@ -77,14 +77,13 @@ func TestUpdateWorkoutValidation(t *testing.T) {
 		{"unknown type", func(r *apiclient.UpdateWorkoutRequest) { r.Type = "cardio" }, false},
 		{"negative intake", func(r *apiclient.UpdateWorkoutRequest) { r.ProteinG = &neg }, false},
 		{"blank exercise", func(r *apiclient.UpdateWorkoutRequest) { r.Entries[0].Name = "" }, false},
-		{"missing revision", func(r *apiclient.UpdateWorkoutRequest) { r.ExpectedUpdatedAt = time.Time{} }, false},
 		{"times together", func(r *apiclient.UpdateWorkoutRequest) { r.StartedAt, r.FinishedAt = &started, &finished }, true},
 		{"only started", func(r *apiclient.UpdateWorkoutRequest) { r.StartedAt = &started }, false},
 		{"finished before started", func(r *apiclient.UpdateWorkoutRequest) { r.StartedAt, r.FinishedAt = &finished, &started }, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := apiclient.UpdateWorkoutRequest{PerformedOn: "2026-10-03", RawText: "x", ExpectedUpdatedAt: revision,
+			req := apiclient.UpdateWorkoutRequest{PerformedOn: "2026-10-03", RawText: "x",
 				Entries: []apiclient.Entry{{Name: "Squat", Sets: []apiclient.Set{{Weight: "0", Reps: 1}}}}}
 			tt.mutate(&req)
 			err := v.Struct(req)
