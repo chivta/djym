@@ -8,6 +8,7 @@
 <style>
 :root{color-scheme:dark;--bg:#0e1621;--surface:#17212b;--message:#182533;--text:#e4eaf0;--muted:#8b9aaa;--accent:#6ab3f3;--line:#263544;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-synthesis:none}
 *{box-sizing:border-box}body{margin:0}button,textarea{font:inherit}button{color:inherit;cursor:pointer;touch-action:manipulation}button:disabled{cursor:default;opacity:.4}button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}h1,h2,p{margin:0}button{border:0}header{background:var(--surface);border-bottom:1px solid var(--line)}.top{max-width:640px;margin:auto;min-height:72px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:23px;font-weight:650;letter-spacing:-.5px}.brand-note{font-size:12px;color:var(--muted);margin-top:3px}.quiet{background:none;color:var(--accent);padding:10px 0;font-size:14px}.quiet[aria-current="page"]{color:var(--text)}main{max-width:640px;margin:auto;padding:28px 20px max(24px,env(safe-area-inset-bottom))}.draft-meta{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;font-size:12px;color:var(--muted)}.draft-meta label{color:var(--text)}.editor-box{position:relative;border:1px solid var(--line);border-radius:14px 14px 4px 14px;background:var(--message);overflow:hidden}.editor-box:focus-within{border-color:#46637c}.editor-text{font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:normal;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;padding:18px;margin:0;border:0;width:100%}textarea.editor-text{display:block;min-height:330px;resize:none;outline:none;background:transparent;color:var(--text);overflow:hidden;position:relative;z-index:1;border-radius:inherit}textarea::placeholder{color:#75889a;opacity:1}.mirror{position:absolute;inset:0;overflow:hidden;pointer-events:none;user-select:none}.mirror-text{color:transparent;min-height:100%}.ghost{color:#74889d}.suggestion-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;font-size:12px;color:var(--muted)}.suggestion-copy{min-width:0;line-height:1.6}.suggestion-source{display:block;font-size:11px;color:#728699;overflow-wrap:anywhere}.accept{flex-shrink:0;background:none;color:var(--accent);padding:12px 0 12px 8px;font-size:13px}.primary{width:100%;background:#5288b5;color:#fff;border-radius:10px;min-height:48px;padding:13px 18px;font-weight:600;font-size:14px;margin-top:12px}.primary:hover{background:#639bc9}.secondary{background:none;color:var(--accent);padding:14px 0;font-size:14px}.note{color:var(--muted);font-size:12px;line-height:1.7;margin:14px 0}.notice{color:#e0bb7e;font-size:12px;line-height:1.6;margin-top:12px}.notice:empty{display:none}.demo-note{color:#657789;font-size:11px;margin-top:28px;text-align:center;line-height:1.6}h2{font-size:21px;font-weight:600;margin:8px 0 20px}.list{display:grid}.record{background:none;text-align:left;padding:18px 0;border-bottom:1px solid var(--line);width:100%}.record-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.record-title{font-size:16px;font-weight:500;overflow-wrap:anywhere}.tag{font-size:10px;color:var(--muted);flex-shrink:0}.record p{font-size:12px;color:var(--muted);margin-top:7px}.back{background:none;color:var(--accent);padding:0 0 20px;font-size:14px}.snapshot{font:16px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--message);border-radius:12px;padding:18px;margin:20px 0}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);background:#304458;color:var(--text);padding:12px 18px;border-radius:10px;font-size:13px;line-height:1.5;z-index:4;box-shadow:0 4px 20px #0003}.empty{padding:50px 0}.empty h2{margin-bottom:8px}@media(max-width:360px){.top{padding-inline:16px}main{padding:22px 16px}.editor-text{padding:14px}.suggestion-row{gap:6px}}
+.edit-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font-size:13px;color:var(--muted)}.times{margin:8px 0 4px;font-size:12px;color:var(--muted)}.times summary{cursor:pointer;padding:8px 0}.time-fields{display:grid;gap:10px;padding:8px 0}.time-fields label{display:grid;gap:6px}.time-fields input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;width:100%;color-scheme:dark}input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -15,20 +16,22 @@
 <main>
 <section id="workout-page" aria-label="Workout draft">
 <div id="draft-content">
-<div class="draft-meta"><label for="editor">Workout</label><span id="save-status" role="status">Saved locally</span></div>
+<div id="edit-banner" class="edit-banner" hidden><span>Editing completed workout</span><button id="cancel-edit" class="quiet">Cancel edit</button></div>
+<div class="draft-meta"><label for="editor">Workout</label><span id="save-status" role="status">Draft saved locally</span></div>
 <div class="editor-box" id="editor-box">
 <div class="mirror" aria-hidden="true"><div id="mirror-text" class="editor-text mirror-text"><span id="mirror-prefix"></span><span id="ghost" class="ghost"></span></div></div>
 <textarea id="editor" class="editor-text" aria-describedby="editor-help suggestion-help suggestion-source" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="03.10 upper&#10;жим в нахилі сміт 60-10 -9"></textarea>
 </div>
 <div class="suggestion-row"><div class="suggestion-copy"><span id="suggestion-help">Date + any title, then one exercise per line.</span><span id="suggestion-source" class="suggestion-source"></span></div><button id="accept" class="accept" hidden>Accept →</button></div>
 <p id="editor-help" hidden>Write freely. At the end of your note, swipe right over the ghost text or press Tab to accept a suggestion. Suggestions never change your note until accepted.</p>
-<p id="copy-note" class="note" hidden>New draft copy. The completed original is unchanged.</p>
+<details id="workout-times" class="times"><summary>Workout times · optional</summary><div class="time-fields"><label for="started-at">Started at<input id="started-at" type="datetime-local" step="60"></label><label for="completed-at">Finished at<input id="completed-at" type="datetime-local" step="60" aria-describedby="time-error"></label></div></details>
+<p id="time-error" class="notice" role="alert"></p>
 <button id="complete" class="primary">Complete workout</button>
 </div>
 <div id="empty-draft" class="empty" hidden><h2>Workout complete.</h2><p class="note">Your note is in History.</p><button id="start-from-empty" class="primary">New workout</button></div>
 </section>
 <section id="history-page" aria-labelledby="history-heading" hidden><h2 id="history-heading">History</h2><div id="history-list" class="list"></div></section>
-<section id="detail-page" aria-labelledby="detail-heading" hidden><button id="back-history" class="back">← History</button><h2 id="detail-heading"></h2><p id="detail-meta" class="note"></p><pre id="snapshot" class="snapshot"></pre><p class="note">Completed snapshot · edits create a new draft.</p><button id="edit-again" class="primary">Edit as a new draft</button><button id="new-workout" class="secondary">New workout</button></section>
+<section id="detail-page" aria-labelledby="detail-heading" hidden><button id="back-history" class="back">← History</button><h2 id="detail-heading"></h2><p id="detail-meta" class="note"></p><p id="detail-times" class="note"></p><pre id="snapshot" class="snapshot"></pre><button id="edit-again" class="primary">Edit workout</button><button id="new-workout" class="secondary">New workout</button></section>
 <p id="storage-notice" class="notice" role="status"></p>
 <p class="demo-note">Local only · demo programs &amp; history</p>
 </main>
@@ -61,6 +64,8 @@ try {
  }
 } catch (_) {storageAvailable=false;storageReadFailed=true;}
 const editor = $('editor');
+// The new-workout draft is suspended, not replaced, while a saved record is edited.
+function activeDraft() {return state.edit?state.edit.draft:state.draft;}
 let page='workout', selectedRecord=null, suggestion=null, composing=false, gesture=null, toastTimer;
 function persist() {
  // Never overwrite unreadable existing data with a fresh demo draft.
@@ -70,15 +75,16 @@ function persist() {
  storageStatus();
 }
 function storageStatus() {
- $('save-status').textContent=storageAvailable?'Saved locally':'Memory only';
+ $('save-status').textContent=storageAvailable?'Draft saved locally':'Memory only';
  $('storage-notice').textContent=storageReadFailed?'Saved data could not be read and has been left untouched. Changes in this session are memory only.':storageAvailable?'':'Device storage is unavailable. Changes may be lost when you close or reload.';
 }
 function announce(text) {clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
 function normalize(text) {return text.normalize('NFC').toLocaleLowerCase().replace(/\s+/g,' ').trim();}
 function titleOf(text) {return (text.split('\n').find(line=>line.trim())||'').trim().replace(/^\d{1,2}\.\d{1,2}(?:\.\d{4})?(?:\s+|$)/,'').replace(/\(\d+\/\d+[^)]*\)/g,'').trim();}
 function matchedProgram() {const title=normalize(titleOf(editor.value));return programs.find(p=>normalize(p.name)===title);}
-function workoutDate(text) {
- const today=new Date();
+function workoutDate(text, referenceDate) {
+ // An old yearless header keeps its saved year when only its content/times change.
+ const today=referenceDate?new Date(referenceDate.slice(0,10)+'T12:00:00'):new Date();
  const match=text.trimStart().match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?(?:\s|$)/);
  const date=match?new Date(Number(match[3]||today.getFullYear()),Number(match[2])-1,Number(match[1])):today;
  const valid=match && date.getDate()===Number(match[1]) && date.getMonth()===Number(match[2])-1;
@@ -86,7 +92,7 @@ function workoutDate(text) {
  return chosen.getFullYear()+'-'+String(chosen.getMonth()+1).padStart(2,'0')+'-'+String(chosen.getDate()).padStart(2,'0');
 }
 function dateLabel(date) {const d=new Date(date.length===10?date+'T12:00:00':date);return Number.isNaN(d.getTime())?date:d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}
-function allRecords() {return [...state.records,...samples];}
+function allRecords() {return [...state.records,...samples.filter(sample=>!state.records.some(record=>record.id===sample.id))];}
 function exerciseLine(line) {
  const match=line.trim().match(/^(.*?)\s+((?:\d+(?:\.\d{1,2})?)?-\d*.*)$/);
  return match?{name:match[1],sets:match[2]}:{name:line.trim(),sets:''};
@@ -104,7 +110,7 @@ function previousSets(name) {
 function nextSuggestion() {
  // A plain textarea remains the source of truth. Only suggest at its end so wrapped
  // ghost text can never overlap later lines or disagree with the native caret.
- if(!state.draft || composing || document.activeElement!==editor || editor.selectionStart!==editor.value.length || editor.selectionEnd!==editor.value.length)return null;
+ if(!activeDraft() || composing || document.activeElement!==editor || editor.selectionStart!==editor.value.length || editor.selectionEnd!==editor.value.length)return null;
  const lines=editor.value.split('\n');
  const current=lines[lines.length-1];
  if(lines.length<2 || !lines.slice(0,-1).some(line=>line.trim()))return null;
@@ -142,12 +148,12 @@ function updateSuggestions() {
  $('accept').setAttribute('aria-label',suggestion?'Accept suggestion: '+suggestion.text:'Accept suggestion');
  $('suggestion-help').textContent=suggestion?'Swipe right or Tab to accept': 'Date + any title, then one exercise per line.';
  $('suggestion-source').textContent=suggestion?.source||'';
- $('complete').disabled=!state.draft || !editor.value.trim();
+ $('complete').disabled=!activeDraft() || !editor.value.trim();
  fitEditor();
 }
 function changed() {
- if(!state.draft)return;
- state.draft.text=editor.value;persist();updateSuggestions();
+ if(!activeDraft())return;
+ activeDraft().text=editor.value;persist();updateSuggestions();
 }
 function acceptSuggestion() {
  const next=nextSuggestion();
@@ -164,10 +170,15 @@ function showPage(next) {
  if(next==='workout')renderDraft();
 }
 function renderDraft() {
- $('draft-content').hidden=!state.draft;$('empty-draft').hidden=!!state.draft;
- editor.value=state.draft?.text||'';editor.disabled=!state.draft;
+ const draft=activeDraft();
+ $('draft-content').hidden=!draft;$('empty-draft').hidden=!!draft;
+ editor.value=draft?.text||'';editor.disabled=!draft;
  editor.setSelectionRange(editor.value.length,editor.value.length);
- $('copy-note').hidden=!state.draft?.copy;storageStatus();updateSuggestions();
+ $('edit-banner').hidden=!state.edit;
+ $('complete').textContent=state.edit?'Save changes':'Complete workout';
+ $('started-at').value=draft?.startedAt||'';$('completed-at').value=draft?.completedAt||'';
+ $('workout-times').open=!!(draft?.startedAt || draft?.completedAt);
+ clearTimeError();storageStatus();updateSuggestions();
 }
 function renderHistory() {
  $('history-list').replaceChildren();
@@ -183,10 +194,12 @@ function renderHistory() {
 function openRecord(record) {
  selectedRecord=record;$('detail-heading').textContent=titleOf(record.text)||'Untitled workout';
  $('detail-meta').textContent=dateLabel(record.date)+' · '+(record.sample?'Demo history':storageAvailable?'Completed locally':'Completed in memory');
+ $('detail-times').textContent=[record.startedAt?'Started: '+record.startedAt.replace('T',' '):'',record.completedAt?'Finished: '+record.completedAt.replace('T',' '):''].filter(Boolean).join(' · ');
  $('snapshot').textContent=record.text;showPage('detail');
 }
 function allowReplaceDraft() {return !state.draft || !state.draft.text.trim() || confirm('Replace your current draft? Completed workouts will stay unchanged.');}
 function startFresh() {
+ if(state.edit){showPage('workout');announce('Save changes or cancel this edit before starting a new workout.');return;}
  if(!allowReplaceDraft())return;
  const date=new Date(),pad=n=>String(n).padStart(2,'0');
  state.draft={text:pad(date.getDate())+'.'+pad(date.getMonth()+1)+'.'+date.getFullYear()+' ',copy:false};persist();showPage('workout');editor.focus();
@@ -224,13 +237,47 @@ window.addEventListener('resize',updateSuggestions);
 $('history-toggle').onclick=()=>showPage(page==='workout'?'history':'workout');
 $('back-history').onclick=()=>showPage('history');$('new-workout').onclick=startFresh;$('start-from-empty').onclick=startFresh;
 $('edit-again').onclick=()=>{
- if(!selectedRecord || !allowReplaceDraft())return;
- state.draft={text:selectedRecord.text,copy:true};persist();showPage('workout');editor.focus();announce('New draft. The completed original is unchanged.');
+ if(!selectedRecord)return;
+ if(state.edit?.targetId!==selectedRecord.id) {
+  if(state.edit && !confirm('Discard changes to the other workout? The completed original will stay unchanged.'))return;
+  state.edit={targetId:selectedRecord.id,draft:{text:selectedRecord.text,startedAt:selectedRecord.startedAt||'',completedAt:selectedRecord.completedAt||''}};
+ }
+ persist();showPage('workout');editor.focus();
 };
+$('cancel-edit').onclick=()=>{
+ if(!state.edit)return;
+ const record=allRecords().find(record=>record.id===state.edit.targetId);
+ delete state.edit;persist();
+ if(record)openRecord(record);else showPage('history');
+ announce('Edit canceled. The completed workout is unchanged.');
+};
+function clearTimeError() {
+ $('time-error').textContent='';$('completed-at').removeAttribute('aria-invalid');
+}
+for(const [id,field] of [['started-at','startedAt'],['completed-at','completedAt']]) {
+ $(id).addEventListener('input',()=>{
+  if(!activeDraft())return;
+  activeDraft()[field]=$(id).value;clearTimeError();persist();
+ });
+}
 $('complete').onclick=()=>{
- if(!state.draft || !state.draft.text.trim())return;
- const record={id:'local-'+Date.now()+'-'+Math.random().toString(36).slice(2),text:state.draft.text,program:matchedProgram()?.id||null,date:workoutDate(state.draft.text),sample:false};
- state.records.unshift(record);state.draft=null;persist();openRecord(record);announce(storageAvailable?'Workout completed. Saved on this device.':'Workout completed in memory only.');
+ const draft=activeDraft();
+ if(!draft || !draft.text.trim())return;
+ // datetime-local values stay local wall-clock strings; do not pass through UTC.
+ if(draft.startedAt && draft.completedAt && draft.completedAt<draft.startedAt) {
+  $('workout-times').open=true;
+  $('time-error').textContent='Finish must be at or after start. Change either time, or clear it.';
+  $('completed-at').setAttribute('aria-invalid','true');$('completed-at').focus();return;
+ }
+ const editing=!!state.edit;
+ const existing=editing?allRecords().find(record=>record.id===state.edit.targetId):null;
+ const record={...existing,id:editing?state.edit.targetId:'local-'+Date.now()+'-'+Math.random().toString(36).slice(2),text:draft.text,program:matchedProgram()?.id||null,date:workoutDate(draft.text,existing?.date),startedAt:draft.startedAt||'',completedAt:draft.completedAt||'',sample:false};
+ if(editing) {
+  const index=state.records.findIndex(saved=>saved.id===record.id);
+  if(index>=0)state.records[index]=record;else state.records.unshift(record);
+  delete state.edit;
+ } else {state.records.unshift(record);state.draft=null;}
+ persist();openRecord(record);announce(editing?(storageAvailable?'Changes saved on this device.':'Changes saved in memory only.'):(storageAvailable?'Workout completed. Saved on this device.':'Workout completed in memory only.'));
 };
 storageStatus();showPage('workout');
 </script>
