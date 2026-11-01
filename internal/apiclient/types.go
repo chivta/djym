@@ -208,10 +208,15 @@ const (
 	MaxProgramTargetReps = 9999
 )
 
+// ProgramEntry has either a single target, an inclusive rep range, or no target.
+// TargetRepsMin and TargetRepsMax must both be set or both absent; a range cannot
+// be combined with TargetReps. All rep targets are between 1 and MaxProgramTargetReps.
 type ProgramEntry struct {
-	Name       string `json:"name"`
-	SetCount   int    `json:"set_count"`
-	TargetReps *int   `json:"target_reps"`
+	Name          string `json:"name"`
+	SetCount      int    `json:"set_count"`
+	TargetReps    *int   `json:"target_reps"`
+	TargetRepsMin *int   `json:"target_reps_min"`
+	TargetRepsMax *int   `json:"target_reps_max"`
 }
 
 type Program struct {

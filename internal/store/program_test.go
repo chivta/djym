@@ -131,3 +131,63 @@ func TestProgramConcurrentPostgres(t *testing.T) {
 		t.Fatalf("revision race: %v %v", e1, e2)
 	}
 }
+
+func TestProgramRangePostgres(t *testing.T) {
+	s, pool, ctx := localMobileStore(t)
+	user := newTestUser(t, ctx, pool)
+	min, max, single := 6, 8, 10
+	req := apiclient.CreateProgramRequest{
+		ID: "cc000000-0000-4000-8000-000000000005", Name: "Ranges",
+		Entries: []apiclient.ProgramEntry{
+			{Name: "Bench", SetCount: 3, TargetRepsMin: &min, TargetRepsMax: &max},
+			{Name: "Dips", SetCount: 2, TargetReps: &single},
+			{Name: "Plank", SetCount: 1},
+		},
+	}
+	p, created, err := s.CreateProgram(ctx, user, req)
+	if err != nil || !created || !reflect.DeepEqual(p.Entries, req.Entries) {
+		t.Fatalf("create range: %+v %v %v", p, created, err)
+	}
+	checkList := func(want apiclient.Program) {
+		t.Helper()
+		list, err := s.ListPrograms(ctx, user)
+		if err != nil || !reflect.DeepEqual(list.Programs, []apiclient.Program{want}) {
+			t.Fatalf("persisted range: %+v %v", list, err)
+		}
+	}
+	checkList(p)
+	replay, created, err := s.CreateProgram(ctx, user, req)
+	if err != nil || created || !reflect.DeepEqual(replay, p) {
+		t.Fatalf("range replay: %+v %v %v", replay, created, err)
+	}
+	changed := req
+	changed.Entries = append([]apiclient.ProgramEntry{}, req.Entries...)
+	changed.Entries[0].TargetRepsMax = &single
+	if _, _, err := s.CreateProgram(ctx, user, changed); !errors.Is(err, apperr.ErrConflict) {
+		t.Fatalf("differing range replay: %v", err)
+	}
+	// PUT replaces the range, then can replace it with a legacy single target or
+	// clear it entirely; no stale JSONB keys should survive replacement.
+	for _, entries := range [][]apiclient.ProgramEntry{
+		{{Name: "Bench", SetCount: 3, TargetRepsMin: &max, TargetRepsMax: &single}},
+		{{Name: "Bench", SetCount: 3, TargetReps: &single}},
+		{{Name: "Bench", SetCount: 3}},
+	} {
+		updated, err := s.UpdateProgram(ctx, user, p.ID, apiclient.UpdateProgramRequest{Name: p.Name, Entries: entries, ExpectedUpdatedAt: p.UpdatedAt})
+		if err != nil || !reflect.DeepEqual(updated.Entries, entries) || !updated.UpdatedAt.After(p.UpdatedAt) {
+			t.Fatalf("update range: %+v %v", updated, err)
+		}
+		checkList(updated)
+		p = updated
+	}
+	// Rows written before range support have neither of the new JSONB keys.
+	if _, err := pool.Exec(ctx, `UPDATE workout_programs SET entries='[{"name":"Bench","set_count":3,"target_reps":8}]'::jsonb WHERE id=$1`, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	p.Entries = []apiclient.ProgramEntry{{Name: "Bench", SetCount: 3, TargetReps: &max}}
+	checkList(p)
+	legacyReq := apiclient.CreateProgramRequest{ID: p.ID, Name: p.Name, Entries: p.Entries}
+	if replay, created, err := s.CreateProgram(ctx, user, legacyReq); err != nil || created || !reflect.DeepEqual(replay, p) {
+		t.Fatalf("legacy replay: %+v %v %v", replay, created, err)
+	}
+}

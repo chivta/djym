@@ -2188,6 +2188,7 @@
       },
       "ProgramEntry": {
         "type": "object",
+        "description": "Rep targets may be absent/null, a legacy single target_reps, or an inclusive target_reps_min/target_reps_max range. Both range bounds must be present and non-null or both absent/null; minimum must not exceed maximum. A non-null target_reps cannot be combined with a range. Omitted/null targets clear stored targets on PUT.",
         "properties": {
           "name": {
             "type": "string",
@@ -2204,7 +2205,22 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 9999,
-            "nullable": true
+            "nullable": true,
+            "description": "Backward-compatible single rep target; cannot be combined with a range."
+          },
+          "target_reps_min": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999,
+            "nullable": true,
+            "description": "Inclusive lower bound; requires target_reps_max and must not exceed it."
+          },
+          "target_reps_max": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9999,
+            "nullable": true,
+            "description": "Inclusive upper bound; requires target_reps_min."
           }
         },
         "required": [

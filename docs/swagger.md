@@ -79,6 +79,29 @@ never creates a replacement record; a deleted known ID stays a not-found error.
 POST is not retried automatically: a lost response can leave an untracked saved
 workout, so avoid blindly repeating an uncertain create.
 
+## Program rep targets
+
+Program entries support an optional single target or an inclusive rep range:
+
+```json
+{"name":"Bench","set_count":3,"target_reps_min":6,"target_reps_max":8}
+```
+
+This represents 3×6–8 without collapsing the range. `target_reps_min` and
+`target_reps_max` must both be non-null integers or both absent/null, each in
+`1..9999`, with minimum ≤ maximum. Equal bounds are valid. The existing
+`target_reps` integer (`1..9999`) remains supported for a single target, but
+cannot be combined with either non-null range bound. All three targets may be
+absent/null for an entry without a rep target. Invalid targets return
+`400 {"error":"invalid_request"}` without writing.
+
+POST/PUT responses and GET program lists preserve the selected target form;
+absent targets are returned as null. PUT fully replaces entries, so omitting
+or nulling targets clears their previous values. Existing JSONB entries need
+no migration. Program creation replay and update/delete revision checks are
+unchanged, as are bearer ownership and cookie-write protections. No day-title
+alias field is added; clients derive those aliases.
+
 ## Maintaining the contract
 
 `internal/server/docs/openapi.json` describes all existing API operations, wire

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -18,12 +19,17 @@ type programStoreFake struct {
 	mobileStoreFake
 	program       apiclient.CreateProgramRequest
 	programUpdate apiclient.UpdateProgramRequest
+	programs      []apiclient.Program
 	created       bool
 }
 
 func (f *programStoreFake) ListPrograms(context.Context, int64) (apiclient.ListProgramsResponse, error) {
 	f.calls++
-	return apiclient.ListProgramsResponse{Programs: []apiclient.Program{}}, f.mutationErr
+	programs := f.programs
+	if programs == nil {
+		programs = []apiclient.Program{}
+	}
+	return apiclient.ListProgramsResponse{Programs: programs}, f.mutationErr
 }
 func (f *programStoreFake) CreateProgram(_ context.Context, user int64, req apiclient.CreateProgramRequest) (apiclient.Program, bool, error) {
 	if user != 1 {
@@ -114,10 +120,10 @@ func TestProgramHTTP(t *testing.T) {
 func TestProgramAuthorization(t *testing.T) {
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
 		path := "/v1/users/1/programs"
-		body := `{"id":"` + testProgramID + `","name":"Push","entries":[{"name":"Bench","set_count":1}]}`
+		body := `{"id":"` + testProgramID + `","name":"Push","entries":[{"name":"Bench","set_count":3,"target_reps_min":6,"target_reps_max":8}]}`
 		if method == "PUT" || method == "DELETE" {
 			path += "/" + testProgramID
-			body = `{"name":"Push","entries":[{"name":"Bench","set_count":1}],"expected_updated_at":"` + revision.Format(time.RFC3339Nano) + `"}`
+			body = `{"name":"Push","entries":[{"name":"Bench","set_count":3,"target_reps_min":6,"target_reps_max":8}],"expected_updated_at":"` + revision.Format(time.RFC3339Nano) + `"}`
 			if method == "DELETE" {
 				body = `{"expected_updated_at":"` + revision.Format(time.RFC3339Nano) + `"}`
 			}
@@ -207,6 +213,109 @@ func TestProgramValidation(t *testing.T) {
 	for _, method := range []string{"PUT", "DELETE"} {
 		if w := request(programRouter(t, &programStoreFake{}), method, "/v1/users/1/programs/"+testProgramID, `{"name":"Push","entries":[{"name":"Bench","set_count":1}]}`, "Bearer native", "", "", "application/json"); w.Code != 400 {
 			t.Fatalf("missing revision accepted: %d", w.Code)
+		}
+	}
+}
+
+func TestProgramRangeHTTPRoundTrip(t *testing.T) {
+	f := &programStoreFake{created: true}
+	r := programRouter(t, f)
+	path := "/v1/users/1/programs"
+	body := `{"id":"` + testProgramID + `","name":"Push","entries":[{"name":"Bench","set_count":3,"target_reps_min":6,"target_reps_max":8},{"name":"Dips","set_count":2,"target_reps":10},{"name":"Plank","set_count":1}]}`
+	w := request(r, "POST", path, body, "Bearer native", "", "", "application/json")
+	if w.Code != 201 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	var p apiclient.Program
+	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil {
+		t.Fatal(err)
+	}
+	min, max, single := 6, 8, 10
+	want := []apiclient.ProgramEntry{
+		{Name: "Bench", SetCount: 3, TargetRepsMin: &min, TargetRepsMax: &max},
+		{Name: "Dips", SetCount: 2, TargetReps: &single},
+		{Name: "Plank", SetCount: 1},
+	}
+	if !reflect.DeepEqual(p.Entries, want) || !reflect.DeepEqual(f.program.Entries, want) {
+		t.Fatalf("POST lost targets: response=%+v stored=%+v", p.Entries, f.program.Entries)
+	}
+	checkList := func() {
+		t.Helper()
+		f.programs = []apiclient.Program{p}
+		w := request(r, "GET", path, "", "Bearer native", "", "", "")
+		var list apiclient.ListProgramsResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &list); err != nil || w.Code != 200 || !reflect.DeepEqual(list.Programs, []apiclient.Program{p}) {
+			t.Fatalf("GET lost targets: %d %s %v", w.Code, w.Body.String(), err)
+		}
+	}
+	checkList()
+	// Update the range without collapsing it, and replace a legacy single target
+	// with a range while clearing the first entry's old range on a later PUT.
+	for _, entries := range [][]apiclient.ProgramEntry{
+		{{Name: "Bench", SetCount: 3, TargetRepsMin: &max, TargetRepsMax: &single}},
+		{{Name: "Bench", SetCount: 3, TargetReps: &single}, {Name: "Dips", SetCount: 2, TargetRepsMin: &min, TargetRepsMax: &max}},
+	} {
+		edit := apiclient.UpdateProgramRequest{Name: p.Name, Entries: entries, ExpectedUpdatedAt: p.UpdatedAt}
+		w = request(r, "PUT", path+"/"+testProgramID, programJSON(t, edit), "Bearer native", "", "", "application/json")
+		if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil || w.Code != 200 || !reflect.DeepEqual(p.Entries, entries) || !reflect.DeepEqual(f.programUpdate.Entries, entries) {
+			t.Fatalf("PUT lost targets: %d %s %v", w.Code, w.Body.String(), err)
+		}
+		checkList()
+	}
+}
+
+func TestProgramRangeValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, fields string
+		valid        bool
+	}{
+		{"absent", ``, true},
+		{"null", `,"target_reps":null,"target_reps_min":null,"target_reps_max":null`, true},
+		{"legacy single", `,"target_reps":8`, true},
+		{"range", `,"target_reps_min":6,"target_reps_max":8`, true},
+		{"equal bounds", `,"target_reps_min":8,"target_reps_max":8`, true},
+		{"inclusive limits", `,"target_reps_min":1,"target_reps_max":9999`, true},
+		{"only min", `,"target_reps_min":6`, false},
+		{"only max", `,"target_reps_max":8`, false},
+		{"null min", `,"target_reps_min":null,"target_reps_max":8`, false},
+		{"null max", `,"target_reps_min":6,"target_reps_max":null`, false},
+		{"reversed", `,"target_reps_min":8,"target_reps_max":6`, false},
+		{"zero min", `,"target_reps_min":0,"target_reps_max":8`, false},
+		{"negative min", `,"target_reps_min":-1,"target_reps_max":8`, false},
+		{"zero max", `,"target_reps_min":1,"target_reps_max":0`, false},
+		{"negative max", `,"target_reps_min":1,"target_reps_max":-1`, false},
+		{"excess min", `,"target_reps_min":10000,"target_reps_max":10000`, false},
+		{"excess max", `,"target_reps_min":6,"target_reps_max":10000`, false},
+		{"combined targets", `,"target_reps":8,"target_reps_min":6,"target_reps_max":8`, false},
+		{"single with min", `,"target_reps":8,"target_reps_min":6`, false},
+		{"single with max", `,"target_reps":8,"target_reps_max":8`, false},
+		{"string min", `,"target_reps_min":"6","target_reps_max":8`, false},
+		{"string max", `,"target_reps_min":6,"target_reps_max":"8"`, false},
+		{"fraction min", `,"target_reps_min":6.5,"target_reps_max":8`, false},
+		{"fraction max", `,"target_reps_min":6,"target_reps_max":8.5`, false},
+		{"boolean min", `,"target_reps_min":true,"target_reps_max":8`, false},
+		{"overflow max", `,"target_reps_min":6,"target_reps_max":999999999999999999999`, false},
+	} {
+		for _, method := range []string{"POST", "PUT"} {
+			t.Run(method+"/"+tc.name, func(t *testing.T) {
+				path := "/v1/users/1/programs"
+				body := `{"name":"Push","entries":[{"name":"Bench","set_count":3` + tc.fields + `}]`
+				if method == "POST" {
+					body += `,"id":"` + testProgramID + `"}`
+				} else {
+					path += "/" + testProgramID
+					body += `,"expected_updated_at":"` + revision.Format(time.RFC3339Nano) + `"}`
+				}
+				f := &programStoreFake{}
+				w := request(programRouter(t, f), method, path, body, "Bearer native", "", "", "application/json")
+				if tc.valid {
+					if w.Code != 200 || f.calls != 1 {
+						t.Fatalf("valid targets rejected: %d %s calls=%d", w.Code, w.Body.String(), f.calls)
+					}
+				} else if w.Code != 400 || f.calls != 0 || !strings.Contains(w.Body.String(), `"error":"invalid_request"`) {
+					t.Fatalf("invalid targets accepted: %d %s calls=%d", w.Code, w.Body.String(), f.calls)
+				}
+			})
 		}
 	}
 }

@@ -24,6 +24,8 @@ type documentedOperation struct {
 type documentedSchema struct {
 	Properties           map[string]json.RawMessage `json:"properties"`
 	AdditionalProperties *bool                      `json:"additionalProperties"`
+	Required             []string                   `json:"required"`
+	Description          string                     `json:"description"`
 }
 
 type openAPIDocument struct {
@@ -264,5 +266,32 @@ func TestOpenAPIWorkoutCRUDContract(t *testing.T) {
 	// Programs deliberately keep their independent revision contract.
 	if _, ok := spec.Components.Schemas["UpdateProgramRequest"].Properties["expected_updated_at"]; !ok {
 		t.Fatal("program revision was removed")
+	}
+}
+
+func TestOpenAPIProgramRepTargets(t *testing.T) {
+	schema := loadOpenAPI(t).Components.Schemas["ProgramEntry"]
+	for _, name := range []string{"target_reps", "target_reps_min", "target_reps_max"} {
+		var field struct {
+			Type             string
+			Minimum, Maximum int
+			Nullable         bool
+		}
+		if err := json.Unmarshal(schema.Properties[name], &field); err != nil {
+			t.Fatal(err)
+		}
+		if field.Type != "integer" || field.Minimum != 1 || field.Maximum != apiclient.MaxProgramTargetReps || !field.Nullable {
+			t.Errorf("incorrect rep constraints for %s: %+v", name, field)
+		}
+		for _, required := range schema.Required {
+			if required == name {
+				t.Errorf("%s must remain optional", name)
+			}
+		}
+	}
+	for _, rule := range []string{"Both range bounds", "minimum must not exceed maximum", "target_reps cannot be combined with a range"} {
+		if !strings.Contains(schema.Description, rule) {
+			t.Errorf("missing program range contract: %s", rule)
+		}
 	}
 }

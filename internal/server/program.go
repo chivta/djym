@@ -22,6 +22,12 @@ func normalizeProgram(name *string, entries []apiclient.ProgramEntry) bool {
 		if e.Name == "" || utf8.RuneCountInString(e.Name) > apiclient.MaxNameCharacters || e.SetCount < 1 || e.SetCount > apiclient.MaxProgramSets || (e.TargetReps != nil && (*e.TargetReps < 1 || *e.TargetReps > apiclient.MaxProgramTargetReps)) {
 			return false
 		}
+		if (e.TargetRepsMin == nil) != (e.TargetRepsMax == nil) {
+			return false
+		}
+		if e.TargetRepsMin != nil && (e.TargetReps != nil || *e.TargetRepsMin < 1 || *e.TargetRepsMax > apiclient.MaxProgramTargetReps || *e.TargetRepsMin > *e.TargetRepsMax) {
+			return false
+		}
 	}
 	return true
 }
