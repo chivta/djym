@@ -8,6 +8,62 @@ const path = require('node:path');
 const url = process.env.PROTOTYPE_URL || 'http://10.10.0.2:8091/index.html';
 const artifacts = process.env.ARTIFACT_DIR || '/tmp/djym-prototype-review';
 const key = 'fieldnotes-prototype-v1';
+const userProgram = `Day 1 — Upper
+Incline Smith/dumbbell press — 3×6–8
+Barbell curls — 3×10–12
+DB shoulder press — 2×8–10
+Pull ups — 2×8–10
+Chest fly — 2×10–15
+Cable row — 2×8–12
+Triceps overhead extension — 2×8–10
+Dumbbell lateral raises — 2×12–15
+Triceps pushdown — 2×8–10
+Abs crunch — 2×10–15
+Preacher curls — 2×8–12
+Torso rotation machine — 2×10–12
+Reverse pec deck / Face pull — 2×15–20
+
+Day 2 — Lower
+Leg extensions — 3×12–15
+Leg curls — 3×12–15
+Hip adduction — 3×12–15
+Hip abduction — 3×12–15
+Torso rotation machine — 2×10–12
+Sitting calf raises — 3×15–20
+Abs crunch — 2×10–15
+
+Day 3 — Push
+Incline Smith press — 3×6–8
+Lat pulldown — 3×10–12
+DB shoulder press — 2×8–10
+Chest fly — 2×10–15
+Triceps overhead extension — 2×8–10
+Dumbbell lateral raises — 3×15–20
+Preacher/hammer curls — 2×12–15
+Abs crunch — 2×10–15
+Triceps pushdown — 3×10–12
+
+Day 4 — Pull
+Pull ups — 3×8–12
+Dumbbell lateral raises — 3×12–15
+Cable row — 2×8–10
+Overhead cable triceps extension — 3×10–12
+Straight-arm cable pulldown — 2×12–15
+Barbell curls — 3×6–8
+Reverse fly — 3×12–20
+Hammer curls — 2×12–15
+Preacher curls — 2×8–12
+Abs crunch — 2×10–15
+
+Day 5 — Arms + Delts
+Overhead cable triceps extension — 3×10–12
+Barbell curls — 2×10–12
+Dumbbell lateral raises — 4×12–20
+Preacher curls — 3×8–12
+Triceps pushdown — 2×10–12
+Torso rotation machine — 2×10–12
+Face pull — 3×15–20
+Abs crunch — 2×10–15`;
 const seed = {
  program: 'lower', // Legacy selection must not override the title.
  draft: { text: '03.10.2026 upper\n', copy: false },
@@ -262,6 +318,76 @@ const seed = {
  await page.reload();await page.locator('#history-toggle').click();
  assert.equal(await page.locator('#history-list .record').count(),historyCount);
  assert.equal(await page.locator('#history-list .record').filter({hasText:'revised demo'}).count(),1);
+ // Import is explicit, atomic and independent of the active workout and history.
+ await page.locator('#history-toggle').click();
+ await page.locator('#start-from-empty').click();
+ await type('03.10.2026 upper\n');
+ const beforeImport=await saved();
+ async function importProgram(text) {
+  await page.locator('#import-toggle').click();await page.locator('#program-input').fill(text);
+  await page.locator('#import-form button[type=submit]').click();
+ }
+ await page.locator('#import-toggle').click();await page.locator('#program-input').fill(userProgram);
+ assert.deepEqual((await saved()).programs,[]);
+ assert.deepEqual((await saved()).draft,beforeImport.draft);
+ await page.screenshot({path:path.join(artifacts,'djym-import-390.png'),fullPage:true});
+ await page.locator('#import-form button[type=submit]').click();
+ const imported=(await saved()).programs;
+ assert.equal(imported.length,5);assert.deepEqual(imported.map(p=>p.exercises.length),[13,7,9,10,8]);
+ // Compare every line, not just the first exercise of each day.
+ const reconstructed=imported.map(p=>p.name+'\n'+p.exercises.map((name,i)=>name+' — '+p.targets[i].sets+'×'+p.targets[i].min+'–'+p.targets[i].max).join('\n')).join('\n\n');
+ assert.equal(reconstructed,userProgram);
+ assert.deepEqual((await saved()).draft,beforeImport.draft);assert.deepEqual((await saved()).records,beforeImport.records);
+ for(const title of ['upper',' UPPER  ','Day 1 — Upper','day 1 -  upper','Day 1–Upper']) {
+  await type('03.10.2026 '+title+'\n');await expectGhost('Incline Smith/dumbbell press — 3×6–8');
+ }
+ for(const [title,name] of [['Lower','Leg extensions'],['Push','Incline Smith press'],['Pull','Pull ups'],['Arms + Delts','Overhead cable triceps extension'],['day 5 - arms  + delts','Overhead cable triceps extension']]) {
+  await type('03.10.2026 '+title+'\n');assert.ok((await ghost.textContent()).startsWith(name+' — '));
+ }
+ await type('03.10.2026 upper\nIncline');const unaccepted=await value();
+ await expectGhost(' Smith/dumbbell press — 3×6–8');assert.equal(await value(),unaccepted);
+ assert.match(await page.locator('#suggestion-source').textContent(),/saved program · target 3×6–8/);
+ await editor.press('Tab');assert.equal(await value(),'03.10.2026 upper\nIncline Smith/dumbbell press — 3×6–8');
+ await expectGhost('');await editor.press('End');await editor.press('Enter');await expectGhost('Barbell curls — 3×10–12');
+ await type('03.10.2026 upper\nReverse pec');await expectGhost(' deck / Face pull — 2×15–20');
+ await type('03.10.2026 Push\nPreacher/');await expectGhost('hammer curls — 2×12–15');
+ // Planned targets are not performed weights/reps. A prior accepted plan never supplies actual sets.
+ await type('02.10.2026 Upper\nIncline Smith/dumbbell press — 3×6–8');await page.locator('#complete').click();
+ await page.locator('#new-workout').click();await type('03.10.2026 upper\n');
+ await expectGhost('Incline Smith/dumbbell press — 3×6–8');
+ // Actual history remains exact-title scoped and its target is a separate hint.
+ await type('02.10.2026 Upper\nIncline Smith/dumbbell press 60-8 -7');await page.locator('#complete').click();
+ await page.locator('#new-workout').click();await type('03.10.2026 upper\n');
+ await expectGhost('Incline Smith/dumbbell press 60-8 -7');
+ assert.match(await page.locator('#suggestion-source').textContent(),/your history · target 3×6–8/);
+ await type('03.10.2026 Day 1 — Upper\n');await expectGhost('Incline Smith/dumbbell press — 3×6–8');
+ await page.reload();await editor.focus();await expectGhost('Incline Smith/dumbbell press — 3×6–8');
+ assert.deepEqual((await saved()).programs,imported);
+ const preserved=await saved();
+ await importProgram('day 1 - UPPER\r\n  Updated / press  -  4 x 8 - 12  ');
+ assert.equal((await saved()).programs.length,5);
+ assert.deepEqual((await saved()).draft,preserved.draft);assert.deepEqual((await saved()).records,preserved.records);
+ await editor.focus();await expectGhost('Updated / press — 4×8–12');
+ await importProgram('Day 1 – Upper\nUpdated / press — 4×8—12\n\nDay 6 — Upper\nOther press - 2x10-12');
+ await type('03.10.2026 Upper\n');await expectGhost(''); // Ambiguous alias, including a demo alias, is not guessed.
+ await type('03.10.2026 Day 6 - Upper\n');await expectGhost('Other press — 2×10–12');
+ const validState=await saved();
+ await page.locator('#import-toggle').click();await page.locator('#program-input').fill(userProgram);
+ await page.locator('#cancel-import').click();assert.deepEqual(await saved(),validState);
+ for(const invalid of ['', 'Exercise — 3×8–10', 'Day 1 — Upper', 'Day 1 — Upper\nGood — 3×8–10\nBad line', 'Day 1 — Upper\nGood — 0×8–10', 'Day 1 — Upper\nGood — 3×12–8', 'Day 1 — Upper\nGood — 3×8–10\nGood — 3×8–10', 'Day 1 — Upper\nGood — 3×8–10\nDay 1 - UPPER\nOther — 3×8–10']) {
+  await importProgram(invalid);
+  assert.equal(await page.locator('#import-dialog').isVisible(),true);
+  assert.notEqual(await page.locator('#import-error').textContent(),'');
+  assert.deepEqual(await saved(),validState);await page.locator('#cancel-import').click();
+ }
+ // Imported programs still suggest offline, and the modal fits narrow mobile screens.
+ await page.locator('#import-toggle').click();await page.setViewportSize({width:320,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:path.join(artifacts,'djym-import-320.png'),fullPage:true});
+ await page.locator('#cancel-import').click();await context.setOffline(true);
+ await type('03.10.2026 Day 6 — Upper\n');await expectGhost('Other press — 2×10–12');
+ await page.screenshot({path:path.join(artifacts,'djym-imported-ghost-320.png'),fullPage:true});
+ await context.setOffline(false);await page.setViewportSize({width:390,height:844});
  // Existing copy-as-draft states remain readable and preserve old record bytes.
  const legacyCopy={...seed,draft:{text:'legacy draft copy',copy:true}};
  await page.evaluate(({key,legacyCopy})=>localStorage.setItem(key,JSON.stringify(legacyCopy)),{key,legacyCopy});
@@ -279,7 +405,24 @@ const seed = {
  await unavailable.addInitScript(()=>Object.defineProperty(window,'localStorage',{get(){throw new DOMException('Unavailable','SecurityError');}}));
  await unavailable.goto(url);await unavailable.locator('#editor').fill('offline memory note');
  assert.equal(await unavailable.locator('#save-status').textContent(),'Memory only');
+ await unavailable.locator('#import-toggle').click();await unavailable.locator('#program-input').fill(userProgram);
+ await unavailable.locator('#import-form button[type=submit]').click();
+ await unavailable.locator('#editor').fill('03.10.2026 Upper\n');await unavailable.locator('#editor').focus();
+ assert.equal(await unavailable.locator('#ghost').textContent(),'Incline Smith/dumbbell press — 3×6–8');
+ assert.match(await unavailable.locator('#storage-notice').textContent(),/memory only/);
  await unavailable.close();
+ const quota=await context.newPage();await quota.goto(url);
+ await quota.evaluate(({key,seed})=>localStorage.setItem(key,JSON.stringify(seed)),{key,seed});await quota.reload();
+ const beforeQuota=await quota.evaluate(key=>localStorage.getItem(key),key);
+ await quota.evaluate(()=>Storage.prototype.setItem=function(){throw new DOMException('Full','QuotaExceededError');});
+ await quota.locator('#import-toggle').click();await quota.locator('#program-input').fill(userProgram);
+ await quota.locator('#import-form button[type=submit]').click();
+ assert.equal(await quota.evaluate(key=>localStorage.getItem(key),key),beforeQuota);
+ await quota.locator('#editor').fill('03.10.2026 Lower\n');await quota.locator('#editor').focus();
+ assert.equal(await quota.locator('#ghost').textContent(),'Leg extensions — 3×12–15');
+ assert.match(await quota.locator('#storage-notice').textContent(),/storage is unavailable/);
+ assert.equal(await quota.locator('#save-status').textContent(),'Memory only');
+ await quota.close();
  // Direct file navigation works with no server, dependency, or fetch required.
  await context.setOffline(true);
  const file=await context.newPage();await file.goto(pathToFileURL(path.join(__dirname,'index.html')).href);
@@ -294,11 +437,16 @@ const seed = {
  await file.screenshot({path:path.join(artifacts,'djym-wrapped-ghost-320.png'),fullPage:true});
  await file.locator('#editor').press('Tab');
  assert.equal(await file.locator('#editor').inputValue(),'03.10.2026 upper\nжим в нахилі сміт 60-10 -9 50-11 -10');
+ // File-based imported programs reload with the network completely disabled.
+ await file.locator('#import-toggle').click();await file.locator('#program-input').fill(userProgram);
+ await file.locator('#import-form button[type=submit]').click();
+ await file.locator('#editor').fill('03.10.2026 Arms + Delts\n');await file.reload();await file.locator('#editor').focus();
+ assert.equal(await file.locator('#ghost').textContent(),'Overhead cable triceps extension — 3×10–12');
  await file.setViewportSize({width:1280,height:900});
  await file.screenshot({path:path.join(artifacts,'djym-desktop.png'),fullPage:true});
  await file.close();
  assert.deepEqual(errors,[]);assert.equal(externalRequests,0);
  await browser.close();
- console.log('PASS: normalized title matching, unknown titles, scoped history, no pre-accept mutation, Tab/tap/right-swipe, gesture guards, selection/IME/editing, persistence/migration, explicit completion, local historical timestamps/range validation, same-ID editing/cancel/refresh/suspended drafts/demo overrides, 320–430px mirror/overflow, storage failure, direct file/offline.');
+ console.log('PASS: exact five-day/47-exercise import, ranges/slash names/variants, atomic validation/reimport, alias ambiguity, target vs actual history, imported persistence/offline/storage failure/mobile; normalized title matching, unknown titles, scoped history, no pre-accept mutation, Tab/tap/right-swipe, gesture guards, selection/IME/editing, persistence/migration, explicit completion, local historical timestamps/range validation, same-ID editing/cancel/refresh/suspended drafts/demo overrides, 320–430px mirror/overflow, storage failure, direct file/offline.');
  console.log('Screenshots: '+artifacts);
 })().catch(error=>{console.error(error);process.exit(1);});

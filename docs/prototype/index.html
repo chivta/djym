@@ -9,10 +9,11 @@
 :root{color-scheme:dark;--bg:#0e1621;--surface:#17212b;--message:#182533;--text:#e4eaf0;--muted:#8b9aaa;--accent:#6ab3f3;--line:#263544;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-synthesis:none}
 *{box-sizing:border-box}body{margin:0}button,textarea{font:inherit}button{color:inherit;cursor:pointer;touch-action:manipulation}button:disabled{cursor:default;opacity:.4}button:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}h1,h2,p{margin:0}button{border:0}header{background:var(--surface);border-bottom:1px solid var(--line)}.top{max-width:640px;margin:auto;min-height:72px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px}h1{font-size:23px;font-weight:650;letter-spacing:-.5px}.brand-note{font-size:12px;color:var(--muted);margin-top:3px}.quiet{background:none;color:var(--accent);padding:10px 0;font-size:14px}.quiet[aria-current="page"]{color:var(--text)}main{max-width:640px;margin:auto;padding:28px 20px max(24px,env(safe-area-inset-bottom))}.draft-meta{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;font-size:12px;color:var(--muted)}.draft-meta label{color:var(--text)}.editor-box{position:relative;border:1px solid var(--line);border-radius:14px 14px 4px 14px;background:var(--message);overflow:hidden}.editor-box:focus-within{border-color:#46637c}.editor-text{font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:normal;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;padding:18px;margin:0;border:0;width:100%}textarea.editor-text{display:block;min-height:330px;resize:none;outline:none;background:transparent;color:var(--text);overflow:hidden;position:relative;z-index:1;border-radius:inherit}textarea::placeholder{color:#75889a;opacity:1}.mirror{position:absolute;inset:0;overflow:hidden;pointer-events:none;user-select:none}.mirror-text{color:transparent;min-height:100%}.ghost{color:#74889d}.suggestion-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;font-size:12px;color:var(--muted)}.suggestion-copy{min-width:0;line-height:1.6}.suggestion-source{display:block;font-size:11px;color:#728699;overflow-wrap:anywhere}.accept{flex-shrink:0;background:none;color:var(--accent);padding:12px 0 12px 8px;font-size:13px}.primary{width:100%;background:#5288b5;color:#fff;border-radius:10px;min-height:48px;padding:13px 18px;font-weight:600;font-size:14px;margin-top:12px}.primary:hover{background:#639bc9}.secondary{background:none;color:var(--accent);padding:14px 0;font-size:14px}.note{color:var(--muted);font-size:12px;line-height:1.7;margin:14px 0}.notice{color:#e0bb7e;font-size:12px;line-height:1.6;margin-top:12px}.notice:empty{display:none}.demo-note{color:#657789;font-size:11px;margin-top:28px;text-align:center;line-height:1.6}h2{font-size:21px;font-weight:600;margin:8px 0 20px}.list{display:grid}.record{background:none;text-align:left;padding:18px 0;border-bottom:1px solid var(--line);width:100%}.record-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.record-title{font-size:16px;font-weight:500;overflow-wrap:anywhere}.tag{font-size:10px;color:var(--muted);flex-shrink:0}.record p{font-size:12px;color:var(--muted);margin-top:7px}.back{background:none;color:var(--accent);padding:0 0 20px;font-size:14px}.snapshot{font:16px/1.8 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--message);border-radius:12px;padding:18px;margin:20px 0}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);background:#304458;color:var(--text);padding:12px 18px;border-radius:10px;font-size:13px;line-height:1.5;z-index:4;box-shadow:0 4px 20px #0003}.empty{padding:50px 0}.empty h2{margin-bottom:8px}@media(max-width:360px){.top{padding-inline:16px}main{padding:22px 16px}.editor-text{padding:14px}.suggestion-row{gap:6px}}
 .edit-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;font-size:13px;color:var(--muted)}.times{margin:8px 0 4px;font-size:12px;color:var(--muted)}.times summary{cursor:pointer;padding:8px 0}.time-fields{display:grid;gap:10px;padding:8px 0}.time-fields label{display:grid;gap:6px}.time-fields input{font:inherit;color:var(--text);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;width:100%;color-scheme:dark}input:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+nav{display:flex;gap:16px}dialog{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:22px;width:calc(100% - 24px);max-width:580px;max-height:90dvh;overflow:auto}dialog::backdrop{background:#0009}dialog h2{margin:0}dialog label{font-size:13px}#program-input{display:block;width:100%;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:14px;line-height:1.7;resize:vertical}
 </style>
 </head>
 <body>
-<header><div class="top"><div><h1>djym</h1><p class="brand-note">Your workout notes</p></div><nav aria-label="Main navigation"><button id="history-toggle" class="quiet">History</button></nav></div></header>
+<header><div class="top"><div><h1>djym</h1><p class="brand-note">Your workout notes</p></div><nav aria-label="Main navigation"><button id="import-toggle" class="quiet">Import program</button> <button id="history-toggle" class="quiet">History</button></nav></div></header>
 <main>
 <section id="workout-page" aria-label="Workout draft">
 <div id="draft-content">
@@ -35,6 +36,7 @@
 <p id="storage-notice" class="notice" role="status"></p>
 <p class="demo-note">Local only · demo programs &amp; history</p>
 </main>
+<dialog id="import-dialog" aria-labelledby="import-heading"><form id="import-form"><h2 id="import-heading">Import program</h2><p class="note">Paste all days. Import updates matching day titles without changing your workout notes. Set/rep ranges are targets, not completed sets.</p><label for="program-input">Program days</label><textarea id="program-input" rows="12" spellcheck="false" placeholder="Day 1 — Upper&#10;Incline Smith/dumbbell press — 3×6–8&#10;&#10;Day 2 — Lower&#10;Leg curls — 3×12–15" aria-describedby="import-error"></textarea><p id="import-error" class="notice" role="alert"></p><button type="submit" class="primary">Import program</button><button id="cancel-import" type="button" class="secondary">Cancel</button></form></dialog>
 <div id="toast" class="toast" role="status" hidden></div>
 <script>
 'use strict';
@@ -53,14 +55,15 @@ const $ = id => document.getElementById(id);
 // Keep the original key and read its drafts/records, including the old manual-program field.
 // Program matching now comes only from the note title; no stored selection is consulted.
 const key = 'fieldnotes-prototype-v1';
-let state = {draft:{text:'03.10.2026 upper\n',copy:false},records:[]};
+let state = {draft:{text:'03.10.2026 upper\n',copy:false},records:[],programs:[]};
 let storageAvailable = true, storageReadFailed = false;
 try {
  const raw = localStorage.getItem(key);
  if (raw) {
   const saved = JSON.parse(raw);
   if (!saved || !Array.isArray(saved.records) || !(saved.draft===null || (saved.draft && typeof saved.draft.text==='string')) || saved.records.some(r=>!r || typeof r.id!=='string' || typeof r.text!=='string' || typeof r.date!=='string')) throw new Error('Invalid saved state');
-  state = {...saved,records:saved.records.map(r=>({...r,sample:false}))};
+  if(saved.programs!==undefined && (!Array.isArray(saved.programs) || saved.programs.some(p=>!p || typeof p.name!=='string' || typeof p.alias!=='string' || typeof p.id!=='string' || !Array.isArray(p.exercises) || p.exercises.some(name=>typeof name!=='string') || !Array.isArray(p.targets) || p.targets.length!==p.exercises.length || p.targets.some(t=>!t || !Number.isInteger(t.sets) || t.sets<1 || !Number.isInteger(t.min) || t.min<1 || !Number.isInteger(t.max) || t.max<t.min)))) throw new Error('Invalid saved programs');
+  state = {...saved,programs:saved.programs||[],records:saved.records.map(r=>({...r,sample:false}))};
  }
 } catch (_) {storageAvailable=false;storageReadFailed=true;}
 const editor = $('editor');
@@ -81,7 +84,47 @@ function storageStatus() {
 function announce(text) {clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,3500);}
 function normalize(text) {return text.normalize('NFC').toLocaleLowerCase().replace(/\s+/g,' ').trim();}
 function titleOf(text) {return (text.split('\n').find(line=>line.trim())||'').trim().replace(/^\d{1,2}\.\d{1,2}(?:\.\d{4})?(?:\s+|$)/,'').replace(/\(\d+\/\d+[^)]*\)/g,'').trim();}
-function matchedProgram() {const title=normalize(titleOf(editor.value));return programs.find(p=>normalize(p.name)===title);}
+function normalizeTitle(text) {return normalize(text).replace(/\s*[—–-]\s*/g,' - ');}
+function matchedProgram() {
+ const title=normalizeTitle(titleOf(editor.value));
+ const exact=state.programs.find(p=>normalizeTitle(p.name)===title);
+ if(exact)return exact;
+ const aliases=state.programs.filter(p=>normalizeTitle(p.alias)===title);
+ if(aliases.length)return aliases.length===1?aliases[0]:null;
+ return programs.find(p=>normalizeTitle(p.name)===title);
+}
+function parseProgram(text) {
+ const days=[];let day=null;
+ for(const [index,raw] of text.split(/\r?\n/).entries()) {
+  const line=raw.trim();if(!line)continue;
+  const heading=line.match(/^Day\s+(\d+)\s*[—–-]\s*(.+)$/i);
+  if(heading) {
+   if(day && !day.exercises.length)throw new Error('Line '+(index+1)+': the previous day has no exercises.');
+   const name='Day '+Number(heading[1])+' — '+heading[2].replace(/\s+/g,' ').trim();
+   if(!Number.isSafeInteger(Number(heading[1])) || Number(heading[1])<1 || days.some(p=>normalizeTitle(p.name)===normalizeTitle(name)))throw new Error('Line '+(index+1)+': use a positive day number and unique day title.');
+   day={id:'program-'+normalizeTitle(name),name,alias:heading[2].trim(),exercises:[],targets:[]};days.push(day);continue;
+  }
+  if(!day)throw new Error('Line '+(index+1)+': start with a heading such as Day 1 — Upper.');
+  const exercise=line.match(/^(.+?)\s*[—–-]\s*(\d+)\s*[×x]\s*(\d+)(?:\s*[—–-]\s*(\d+))?\s*$/i);
+  if(!exercise)throw new Error('Line '+(index+1)+': expected Exercise — 3×6–8. Nothing was imported.');
+  const name=exercise[1].trim(),sets=Number(exercise[2]),min=Number(exercise[3]),max=Number(exercise[4]||exercise[3]);
+  if(!sets || !min || max<min || ![sets,min,max].every(Number.isSafeInteger))throw new Error('Line '+(index+1)+': sets and reps must be positive, with the range in ascending order.');
+  if(day.exercises.some(existing=>normalize(existing)===normalize(name)))throw new Error('Line '+(index+1)+': duplicate exercise in this day.');
+  day.exercises.push(name);day.targets.push({sets,min,max});
+ }
+ if(!days.length || !day.exercises.length)throw new Error('Add at least one day with an exercise and set/rep target.');
+ return days;
+}
+function targetText(target) {return target.sets+'×'+target.min+(target.min===target.max?'':'–'+target.max);}
+$('import-toggle').onclick=()=>{$('import-error').textContent='';$('import-dialog').showModal();$('program-input').focus();};
+$('cancel-import').onclick=()=>$('import-dialog').close();
+$('import-form').onsubmit=event=>{
+ event.preventDefault();let days;
+ try {days=parseProgram($('program-input').value);}catch(error){$('import-error').textContent=error.message;return;}
+ state.programs=[...state.programs.filter(p=>!days.some(day=>normalizeTitle(day.name)===normalizeTitle(p.name))),...days];
+ persist();$('import-dialog').close();updateSuggestions();
+ announce(days.length+' program day'+(days.length===1?'':'s')+' imported'+(storageAvailable?' on this device.':' in memory only.'));
+};
 function workoutDate(text, referenceDate) {
  // An old yearless header keeps its saved year when only its content/times change.
  const today=referenceDate?new Date(referenceDate.slice(0,10)+'T12:00:00'):new Date();
@@ -94,13 +137,15 @@ function workoutDate(text, referenceDate) {
 function dateLabel(date) {const d=new Date(date.length===10?date+'T12:00:00':date);return Number.isNaN(d.getTime())?date:d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});}
 function allRecords() {return [...state.records,...samples.filter(sample=>!state.records.some(record=>record.id===sample.id))];}
 function exerciseLine(line) {
+ const planned=line.trim().match(/^(.+?)\s+[—–-]\s*\d+\s*[×x]\s*\d+(?:\s*[—–-]\s*\d+)?$/i);
+ if(planned)return {name:planned[1],sets:'',target:true};
  const match=line.trim().match(/^(.*?)\s+((?:\d+(?:\.\d{1,2})?)?-\d*.*)$/);
  return match?{name:match[1],sets:match[2]}:{name:line.trim(),sets:''};
 }
 function previousSets(name) {
- const title=normalize(titleOf(editor.value));
+ const title=normalizeTitle(titleOf(editor.value));
  if(!title || !name)return null;
- const records=allRecords().filter(r=>normalize(titleOf(r.text))===title && r.date.slice(0,10)<workoutDate(editor.value)).sort((a,b)=>b.date.localeCompare(a.date));
+ const records=allRecords().filter(r=>normalizeTitle(titleOf(r.text))===title && r.date.slice(0,10)<workoutDate(editor.value)).sort((a,b)=>b.date.localeCompare(a.date));
  for(const record of records) {
   const line=record.text.split('\n').slice(1).map(exerciseLine).find(line=>normalize(line.name)===normalize(name) && line.sets);
   if(line)return {sets:line.sets,record};
@@ -115,26 +160,29 @@ function nextSuggestion() {
  const current=lines[lines.length-1];
  if(lines.length<2 || !lines.slice(0,-1).some(line=>line.trim()))return null;
  const ctx=exerciseLine(current), program=matchedProgram();
+ if(ctx.target)return null;
  const used=lines.slice(1,-1).map(line=>normalize(exerciseLine(line).name));
  const name=program?.exercises.find(name=>(ctx.sets?normalize(name)===normalize(ctx.name):normalize(name).startsWith(normalize(ctx.name))) && (!used.includes(normalize(name)) || normalize(ctx.name)===normalize(name)));
  // Unknown titles can reuse their own exact exercise history, never another program.
  const history=previousSets(name||ctx.name);
+ const target=program?.targets?.[program.exercises.indexOf(name)];
+ const suffix=history?' '+history.sets:target?' — '+targetText(target):' ';
  let text='';
  if(name && !ctx.sets) {
   const typed=current.trimStart();
   // Preserve every typed character, including case and whitespace, on acceptance.
   // Non-canonical spacing is valid text; finish the name once it matches exactly.
   if(normalize(typed)===normalize(name)) {
-   if(history)text=(/\s$/.test(current)?'':' ')+history.sets;
+   if(history || target)text=(/\s$/.test(current)?suffix.trimStart():suffix);
   } else if(name.toLocaleLowerCase().startsWith(typed.toLocaleLowerCase())) {
-   text=name.slice(typed.length)+(history?' '+history.sets:' ');
+   text=name.slice(typed.length)+suffix;
   }
  } else if(history) {
   if(!ctx.sets)text=(/\s$/.test(current)?'':' ')+history.sets;
   else if(history.sets.startsWith(ctx.sets))text=history.sets.slice(ctx.sets.length);
  }
  if(!text)return null;
- return {text,source:history?dateLabel(history.record.date)+' · '+(history.record.sample?'demo history':'your history'):program.name+' · demo program'};
+ return {text,source:(history?dateLabel(history.record.date)+' · '+(history.record.sample?'demo history':'your history'):program.name+(program.targets?' · saved program':' · demo program'))+(target?' · target '+targetText(target):'')};
 }
 function fitEditor() {
  editor.style.height='auto';
