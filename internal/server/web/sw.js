@@ -1,4 +1,4 @@
-const CACHE = "djym-shell-v1";
+const CACHE = "djym-shell-v2";
 const SHELL = [
   "/",
   "/index.html",

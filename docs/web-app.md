@@ -27,17 +27,32 @@ in production. The approved `docs/prototype/` remains a reference, not runtime.
   offered at the end of the textarea only. Accept with Tab, tap **Accept**, or a
   short right swipe starting over the ghost. Suggestions never enter the note
   until accepted. Prior actual sets are scoped to the same title/exercise and a
-  strictly earlier day. Planned `3×6–8` lines are suggestions, not fabricated sets:
+  strictly earlier day. Historical yearless edits use their saved workout year and
+  never suggest their own completed record. Planned `3×6–8` lines are suggestions, not fabricated sets:
   replace them with actual sets or remove them before completion.
 - History **Edit workout** suspends the new-workout draft, preserves the same
   record/server ID and autosaves only the edit draft. **Save changes** replaces
   the completed record; **Cancel edit** leaves it unchanged and resumes the draft.
+  Each rendered editor is bound to its account and draft/edit session. If another
+  tab opens, cancels or saves a different edit, the stale editor freezes rather
+  than silently retargeting input or completion. **Review editor changes** switches
+  its visible text and actions together. Any unsaved buffer is downloaded as
+  `djym-unsaved-editor.json` before replacement; keep that recovery file (it is a
+  manual text/time recovery artifact, not a normal restore backup).
 
 ## Local storage, accounts and sync
 
 IndexedDB `djym-v1` transactionally stores per-account drafts, suspended edits,
 completed records, program caches and an outbox. Storage errors are visible;
-there is no memory-only success fallback. Browser/device storage is not a backup:
+there is no memory-only success fallback. Every application write requests
+`{durability: "strict"}` and verifies the transaction reports `strict`, including
+immutable sending attempts and the fallback sender lease. Dispatch waits for that
+strict transaction's completion. Engines that reject or silently ignore the
+option are **read-only**: local writes and automatic sync stop with an explicit
+error, while existing partitions remain readable/exportable. There is no relaxed
+fallback. This relies on the browser/OS implementing the IndexedDB strict-durability
+contract; it is not a guarantee against faulty hardware or browser bugs, and no
+power-loss experiment is claimed. Browser/device storage is not a backup:
 use **Export backup**, especially before resolving uncertain operations. Browser
 storage can be evicted or cleared by the user; no app can prevent that.
 

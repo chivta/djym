@@ -44,9 +44,47 @@ let writes = Promise.resolve(),
   syncRequested = false,
   draftSequence = 0,
   committedDraftSequence = 0,
-  draftSaveError = false;
+  draftSaveError = false,
+  renderedEditor = null;
 function activeDraft() {
   return state.edit ? state.edit.draft : state.draft;
+}
+// The visible buffer keeps the identity it was rendered for. A broadcast may
+// replace the cached state, but can never retarget that buffer's writes/actions.
+function matchesEditor(identity, partition = account, snapshot = state) {
+  const draft = snapshot.edit ? snapshot.edit.draft : snapshot.draft;
+  return Boolean(
+    identity &&
+    draft &&
+    identity.account === partition &&
+    identity.targetId === (snapshot.edit?.targetId || null) &&
+    identity.session === (snapshot.edit?.id || draft.id || null),
+  );
+}
+function requireEditor(identity) {
+  if (identity !== renderedEditor || !matchesEditor(identity))
+    throw new Error(
+      "Editor changed in another tab. Your visible text is unchanged; review editor changes before saving.",
+    );
+}
+function editorAction(fn) {
+  return (...args) => {
+    const identity = renderedEditor;
+    guard(async () => {
+      requireEditor(identity);
+      await fn(identity, ...args);
+    })();
+  };
+}
+function updateEditorLock() {
+  const conflict = Boolean(renderedEditor && !matchesEditor(renderedEditor));
+  editor.readOnly = conflict;
+  $("started-at").readOnly = conflict;
+  $("completed-at").readOnly = conflict;
+  $("cancel-edit").disabled = conflict;
+  $("editor-conflict").hidden = !conflict;
+  $("review-editor").hidden = !conflict;
+  return conflict;
 }
 function matchedProgram() {
   return matchProgram(state.programs, editor.value);
@@ -133,12 +171,12 @@ function previousSets(name) {
   if (!title || !name) return null;
   let date;
   try {
-    date = workoutDate(editor.value);
+    date = workoutDate(editor.value, renderedEditor?.referenceDate);
   } catch {
     return null;
   }
   const records = state.records
-    .filter((r) => !r.deleted)
+    .filter((r) => !r.deleted && r.id !== renderedEditor?.targetId)
     .filter(
       (r) =>
         normalizeTitle(titleOf(r.text)) === title && r.date.slice(0, 10) < date,
@@ -158,7 +196,7 @@ function nextSuggestion() {
   // A plain textarea remains the source of truth. Only suggest at its end so wrapped
   // ghost text can never overlap later lines or disagree with the native caret.
   if (
-    !activeDraft() ||
+    !matchesEditor(renderedEditor) ||
     composing ||
     document.activeElement !== editor ||
     editor.selectionStart !== editor.value.length ||
@@ -235,7 +273,8 @@ function updateSuggestions() {
     ? "Swipe right or Tab to accept"
     : "Date + any title, then one exercise per line.";
   $("suggestion-source").textContent = suggestion?.source || "";
-  $("complete").disabled = !activeDraft() || !editor.value.trim();
+  $("complete").disabled =
+    updateEditorLock() || !activeDraft() || !editor.value.trim();
   fitEditor();
 }
 function showPage(next) {
@@ -248,8 +287,45 @@ function showPage(next) {
   if (next === "detail") renderDetail();
   storageStatus();
 }
+function preserveUnsavedEditor() {
+  if (
+    !renderedEditor ||
+    !(draftSaveError || committedDraftSequence !== draftSequence)
+  )
+    return;
+  const buffer = {
+    account: renderedEditor.account,
+    targetId: renderedEditor.targetId,
+    draft: {
+      text: editor.value,
+      startedAt: $("started-at").value,
+      completedAt: $("completed-at").value,
+    },
+  };
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(buffer, null, 2)], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "djym-unsaved-editor.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  announce(
+    "Unsaved editor buffer exported before switching. Keep that recovery file.",
+  );
+}
 function renderDraft() {
+  if (renderedEditor && !matchesEditor(renderedEditor)) preserveUnsavedEditor();
   const draft = activeDraft();
+  renderedEditor = draft
+    ? {
+        account,
+        targetId: state.edit?.targetId || null,
+        session: state.edit?.id || draft.id || null,
+        referenceDate: state.records.find((r) => r.id === state.edit?.targetId)
+          ?.date,
+      }
+    : null;
   $("draft-content").hidden = !draft;
   $("empty-draft").hidden = Boolean(draft);
   editor.value = draft?.text || "";
@@ -339,6 +415,7 @@ async function reloadState(render = false) {
   account = next;
   state = await readAccount(account);
   if (changed) {
+    preserveUnsavedEditor();
     draftSequence = 0;
     committedDraftSequence = 0;
     draftSaveError = false;
@@ -356,10 +433,17 @@ async function reloadState(render = false) {
   }
 }
 function persistDraft() {
-  if (!activeDraft()) return;
+  const identity = renderedEditor;
+  try {
+    requireEditor(identity);
+  } catch (error) {
+    failure(error);
+    updateSuggestions();
+    return;
+  }
   $("time-error").textContent = "";
-  const target = state.edit?.targetId || null,
-    partition = account;
+  const target = identity.targetId,
+    partition = identity.account;
   const draft = {
     text: editor.value,
     startedAt: $("started-at").value,
@@ -375,10 +459,7 @@ function persistDraft() {
     await mutate(
       partition,
       (s) => {
-        if (
-          (s.edit?.targetId || null) !== target ||
-          !(target ? s.edit?.draft : s.draft)
-        )
+        if (!matchesEditor(identity, partition, s))
           throw new Error(
             "Draft changed in another tab. Reload before editing further.",
           );
@@ -613,6 +694,7 @@ $("edit-again").onclick = guard(async () => {
       if (!r) throw new Error("Record no longer exists.");
       if (s.edit?.targetId !== id)
         s.edit = {
+          id: uuid(),
           targetId: id,
           draft: {
             text: r.text,
@@ -627,11 +709,22 @@ $("edit-again").onclick = guard(async () => {
   showPage("workout");
   editor.focus();
 });
-$("cancel-edit").onclick = guard(async () => {
-  selectedID = state.edit?.targetId;
+$("review-editor").onclick = guard(async () => {
+  preserveUnsavedEditor();
+  draftSequence = 0;
+  committedDraftSequence = 0;
+  draftSaveError = false;
+  await reloadState();
+  renderDraft();
+  storageStatus();
+});
+$("cancel-edit").onclick = editorAction(async (identity) => {
+  selectedID = identity.targetId;
   await mutate(
     account,
     (s) => {
+      if (!matchesEditor(identity, identity.account, s))
+        throw new Error("Edit changed in another tab.");
       delete s.edit;
     },
     true,
@@ -639,8 +732,7 @@ $("cancel-edit").onclick = guard(async () => {
   await reloadState();
   showPage("detail");
 });
-$("complete").onclick = guard(async () => {
-  if (!activeDraft()) return;
+$("complete").onclick = editorAction(async (identity) => {
   // The textarea is authoritative even if a slow cache refresh replaced the
   // in-memory snapshot while an autosave transaction was committing.
   const draft = {
@@ -649,20 +741,18 @@ $("complete").onclick = guard(async () => {
     completedAt: $("completed-at").value,
   };
   let payload;
-  const existing = state.records.find((r) => r.id === state.edit?.targetId);
   try {
-    payload = workoutPayload(draft, existing?.date);
+    payload = workoutPayload(draft, identity.referenceDate);
   } catch (error) {
     $("time-error").textContent = error.message;
     return;
   }
-  const id = existing?.id || uuid(),
-    editing = Boolean(state.edit),
-    expectedTarget = state.edit?.targetId;
+  const editing = identity.targetId !== null,
+    id = editing ? identity.targetId : uuid();
   await mutate(
     account,
     (s) => {
-      if (s.edit?.targetId !== expectedTarget)
+      if (!matchesEditor(identity, identity.account, s))
         throw new Error("Edit changed in another tab.");
       const latest = editing ? s.edit?.draft : s.draft;
       if (
@@ -910,7 +1000,8 @@ async function init() {
         ),
       );
     }
-    await recoverAccount(await activeAccount());
+    await reloadState(true);
+    await recoverAccount(account);
     await reloadState(true);
     if ("serviceWorker" in navigator && window.isSecureContext) {
       navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(failure);

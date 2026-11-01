@@ -16,6 +16,7 @@ import {
   importedState,
   changes,
   queueRecord,
+  strictWriteTransaction,
 } from "../internal/server/web/db.js";
 process.env.TZ = "America/Los_Angeles";
 after(() => changes?.close());
@@ -201,4 +202,59 @@ test("pending creates coalesce; dispatched attempts remain immutable through edi
   queueRecord(state, record);
   assert.equal(state.outbox[record.id].version, 2);
   assert.equal(state.outbox[record.id].payload.raw_text, "immutable");
+});
+
+test("all write transactions request verified strict durability without downgrade", () => {
+  const calls = [];
+  const strict = { durability: "strict" };
+  const db = {
+    transaction(...args) {
+      calls.push(args);
+      return strict;
+    },
+  };
+  assert.equal(strictWriteTransaction(db, ["accounts", "meta"]), strict);
+  assert.deepEqual(calls, [
+    [["accounts", "meta"], "readwrite", { durability: "strict" }],
+  ]);
+  let aborted = false;
+  assert.throws(
+    () =>
+      strictWriteTransaction(
+        {
+          transaction(...args) {
+            assert.equal(args[2].durability, "strict");
+            return {
+              durability: "default",
+              abort() {
+                aborted = true;
+              },
+            };
+          },
+        },
+        "accounts",
+      ),
+    /Strict IndexedDB durability is unavailable/,
+  );
+  assert.equal(aborted, true);
+  let attempts = 0;
+  assert.throws(
+    () =>
+      strictWriteTransaction(
+        {
+          transaction(...args) {
+            attempts++;
+            assert.equal(args.length, 3);
+            throw new TypeError("Options unsupported");
+          },
+        },
+        "accounts",
+      ),
+    /Writes and automatic sync are disabled/,
+  );
+  assert.equal(
+    attempts,
+    1,
+    "must never retry a relaxed two-argument transaction",
+  );
 });

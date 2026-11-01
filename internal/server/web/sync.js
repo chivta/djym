@@ -4,6 +4,7 @@ import {
   readAccount,
   mutate,
   openDB,
+  strictWriteTransaction,
   queueRecord,
 } from "./db.js";
 import { uuid, workoutPayload, fromServer, sameWorkout } from "./domain.js";
@@ -42,7 +43,7 @@ async function leased(fn) {
     });
   const claim = () =>
     new Promise((resolve, reject) => {
-      const tx = db.transaction("meta", "readwrite"),
+      const tx = strictWriteTransaction(db, "meta"),
         store = tx.objectStore("meta"),
         r = store.get("sender");
       let won = false;
@@ -77,7 +78,7 @@ async function leased(fn) {
   } finally {
     clearInterval(timer);
     await new Promise((resolve, reject) => {
-      const tx = db.transaction("meta", "readwrite"),
+      const tx = strictWriteTransaction(db, "meta"),
         s = tx.objectStore("meta"),
         r = s.get("sender");
       r.onsuccess = () => {

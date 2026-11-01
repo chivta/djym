@@ -27,12 +27,29 @@ export function openDB() {
     });
   return connection;
 }
+// Never silently downgrade a pre-dispatch attempt (or any app write) to the
+// browser's default/relaxed flush policy. Unsupported engines stay read-only.
+export function strictWriteTransaction(db, stores) {
+  let tx;
+  try {
+    tx = db.transaction(stores, "readwrite", { durability: "strict" });
+    if (tx.durability === "strict") return tx;
+  } catch {
+    throw new Error(
+      "Strict IndexedDB durability is unavailable. Writes and automatic sync are disabled; existing data can still be exported.",
+    );
+  }
+  tx.abort();
+  throw new Error(
+    "Strict IndexedDB durability is unavailable. Writes and automatic sync are disabled; existing data can still be exported.",
+  );
+}
 // Mutators are synchronous inside a single read/write transaction; every tab reads
-// current state before modifying it. Resolve only after the durable commit event.
+// current state before modifying it. Resolve only after strict transaction completion.
 export async function transaction(stores, fn) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(stores, "readwrite"),
+    const tx = strictWriteTransaction(db, stores),
       values = {},
       requests = [];
     let result, error;
@@ -87,7 +104,7 @@ export async function readAccount(account) {
 export async function mutate(account, fn, requireActive = false) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(["accounts", "meta"], "readwrite");
+    const tx = strictWriteTransaction(db, ["accounts", "meta"]);
     let state, error;
     tx.oncomplete = () => {
       changes?.postMessage("changed");
@@ -146,7 +163,7 @@ export async function adoptGuest(account) {
   if (account === "guest") return;
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(["accounts", "meta"], "readwrite");
+    const tx = strictWriteTransaction(db, ["accounts", "meta"]);
     let error;
     tx.oncomplete = () => {
       changes?.postMessage("changed");

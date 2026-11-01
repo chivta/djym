@@ -49,6 +49,13 @@
             <span>Editing completed workout</span
             ><button id="cancel-edit" class="quiet">Cancel edit</button>
           </div>
+          <p id="editor-conflict" class="notice" role="alert" hidden>
+            Another tab changed the active draft or edit. This editor is frozen;
+            its visible text has not been retargeted.
+          </p>
+          <button id="review-editor" class="secondary" hidden>
+            Review editor changes
+          </button>
           <div class="draft-meta">
             <label for="editor">Workout</label
             ><span id="save-status" role="status">Draft saved locally</span>

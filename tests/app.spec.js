@@ -890,3 +890,324 @@ test("ghost tap and right-swipe acceptance preserve typed characters and ignore 
   });
   await expect(page.locator("#ghost")).toHaveText("");
 });
+
+test("a broadcast cannot retarget a rendered new draft to another tab’s edit", async ({
+  page,
+  context,
+}) => {
+  await mock(context);
+  await page.goto("/");
+  await ready(page);
+  const original = "03.10.2026 Existing W\nBench 20-10",
+    draft = "04.10.2026 New draft\nSquat 50-8";
+  await page.evaluate(
+    async ({ original, draft }) => {
+      const db = await import("/db.js");
+      await db.mutate("guest", (s) => {
+        s.records = [
+          { id: "W", text: original, date: "2026-10-03", version: 1 },
+        ];
+        s.draft = { id: "new-draft", text: draft };
+      });
+    },
+    { original, draft },
+  );
+  await page.reload();
+  await ready(page);
+  const second = await context.newPage();
+  await second.goto("/");
+  await ready(second);
+  await second.locator("#history-toggle").click();
+  await second.locator(".record").click();
+  await second.locator("#edit-again").click();
+  await expect(page.locator("#editor-conflict")).toBeVisible();
+  await expect(page.locator("#editor")).toHaveValue(draft);
+  await expect(page.locator("#editor")).toHaveAttribute("readonly", "");
+  await expect(page.locator("#complete")).toBeDisabled();
+  await expect(page.locator("#complete")).toHaveText("Complete workout");
+  await page.locator("#editor").focus();
+  await page.locator("#editor").pressSequentially("NOT W");
+  await page.evaluate(() => document.querySelector("#complete").onclick());
+  await expect(page.locator("#storage-notice")).toContainText("Editor changed");
+  let state = await saved(page);
+  expect(state.records[0].text).toBe(original);
+  expect(state.edit.draft.text).toBe(original);
+  expect(state.draft.text).toBe(draft);
+  await second.locator("#cancel-edit").click();
+  await expect(page.locator("#editor-conflict")).not.toBeVisible();
+  await expect(page.locator("#complete")).toBeEnabled();
+  await second.locator("#edit-again").click();
+  await expect(page.locator("#editor-conflict")).toBeVisible();
+  const edited = "03.10.2026 Existing W\nBench 21-9";
+  await complete(second, edited);
+  await expect(page.locator("#editor-conflict")).not.toBeVisible();
+  await expect(page.locator("#editor")).toHaveValue(draft);
+  await page.locator("#complete").click();
+  await expect(page.locator("#snapshot")).toHaveText(draft);
+  state = await saved(page);
+  expect(state.records).toHaveLength(2);
+  expect(state.records.find((r) => r.id === "W").text).toBe(edited);
+});
+
+test("cancel/reopen and account transitions invalidate stale rendered edit actions", async ({
+  page,
+  context,
+}) => {
+  await mock(context);
+  await page.goto("/");
+  await ready(page);
+  await complete(page);
+  await page.locator("#new-workout").click();
+  const draft = "04.10.2026 Suspended\nSquat 50-8";
+  await page.locator("#editor").fill(draft);
+  await ready(page);
+  await page.locator("#history-toggle").click();
+  await page.locator(".record").click();
+  await page.locator("#edit-again").click();
+  const second = await context.newPage();
+  await second.goto("/");
+  await ready(second);
+  await second.locator("#cancel-edit").click();
+  await expect(page.locator("#editor-conflict")).toBeVisible();
+  await expect(page.locator("#cancel-edit")).toBeDisabled();
+  await expect(page.locator("#complete")).toHaveText("Save changes");
+  // Cancel/reopen the SAME record creates a different edit session, not an ABA match.
+  await second.locator("#edit-again").click();
+  await expect(second.locator("#edit-banner")).toBeVisible();
+  await expect(page.locator("#editor-conflict")).toBeVisible();
+  await page.evaluate(() => {
+    document.querySelector("#cancel-edit").onclick();
+    document.querySelector("#complete").onclick();
+  });
+  await expect(page.locator("#storage-notice")).toContainText("Editor changed");
+  expect((await saved(page)).edit).toBeTruthy();
+  expect((await saved(page)).records[0].text).toBe(note);
+  await page.locator("#review-editor").click();
+  await expect(page.locator("#editor-conflict")).not.toBeVisible();
+  await expect(page.locator("#editor")).toHaveValue(note);
+  await second.locator("#cancel-edit").click();
+  await expect(page.locator("#editor-conflict")).toBeVisible();
+  await page.locator("#review-editor").click();
+  await expect(page.locator("#editor")).toHaveValue(draft);
+  await expect(page.locator("#complete")).toHaveText("Complete workout");
+  await second.evaluate(async () => {
+    await (await import("/db.js")).setActive("2");
+  });
+  await expect(page.locator("#account-label")).toContainText("Account 2");
+  expect(await page.locator("#editor").inputValue()).not.toBe(draft);
+  expect((await saved(page, "2")).records).toHaveLength(0);
+  expect((await saved(page)).draft.text).toBe(draft);
+  expect((await saved(page)).records[0].text).toBe(note);
+});
+
+test("historical yearless edit suggestions use saved year and exclude the edited record", async ({
+  page,
+  context,
+}) => {
+  await mock(context);
+  await page.goto("/");
+  await ready(page);
+  await page.evaluate(async () => {
+    await (
+      await import("/db.js")
+    ).mutate("guest", (s) => {
+      s.records = [
+        {
+          id: "self-2018",
+          date: "2018-05-02",
+          text: "02.05 Upper\nBench 88-1",
+          version: 1,
+        },
+        {
+          id: "future-2019",
+          date: "2019-05-01",
+          text: "01.05.2019 Upper\nBench 99-1",
+          version: 1,
+        },
+        {
+          id: "prior-2017",
+          date: "2017-05-01",
+          text: "01.05.2017 Upper\nBench 20-10",
+          version: 1,
+        },
+      ];
+    });
+  });
+  await page.reload();
+  await ready(page);
+  await page.locator("#history-toggle").click();
+  await page.locator(".record").filter({ hasText: "2 May 2018" }).click();
+  await page.locator("#edit-again").click();
+  await page.locator("#editor").fill("02.05 Upper\nBench");
+  await page.locator("#editor").focus();
+  await expect(page.locator("#ghost")).toHaveText(" 20-10");
+  await expect(page.locator("#suggestion-source")).toContainText("1 May 2017");
+  await page.evaluate(async () => {
+    await (
+      await import("/db.js")
+    ).mutate("guest", (s) => {
+      s.records = s.records.filter((r) => r.id !== "prior-2017");
+    });
+    const channel = new BroadcastChannel("djym-state");
+    channel.postMessage("changed");
+    channel.close();
+  });
+  await expect(page.locator("#ghost")).toHaveText("");
+  await page.locator("#editor").fill("03.05 Upper\nBench");
+  await expect(page.locator("#ghost")).toHaveText("");
+  await complete(page, "02.05 Upper\nBench 21-9");
+  expect(
+    (await saved(page)).records.find((r) => r.id === "self-2018").date,
+  ).toBe("2018-05-02");
+});
+
+test("app writes and the committed sending attempt request strict durability", async ({
+  page,
+  context,
+}) => {
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, "locks", { value: undefined });
+    window.writeOptions = [];
+    window.sendingCommitted = false;
+    const transaction = IDBDatabase.prototype.transaction,
+      put = IDBObjectStore.prototype.put;
+    IDBDatabase.prototype.transaction = function (...args) {
+      if (args[1] === "readwrite")
+        window.writeOptions.push(args[2]?.durability);
+      return transaction.apply(this, args);
+    };
+    IDBObjectStore.prototype.put = function (value, ...args) {
+      if (
+        value?.outbox &&
+        Object.values(value.outbox).some((item) => item.status === "sending")
+      ) {
+        window.sendingDurability = this.transaction.durability;
+        this.transaction.addEventListener("complete", () => {
+          window.sendingCommitted = true;
+        });
+      }
+      return put.call(this, value, ...args);
+    };
+  });
+  const api = await mock(context, { user: 1 });
+  let release;
+  api.gate = new Promise((resolve) => (release = resolve));
+  await page.goto("/");
+  await expect(page.locator("#account-label")).toContainText("Account 1");
+  await complete(page);
+  await expect.poll(() => api.writes.length).toBe(1);
+  const proof = await page.evaluate(() => ({
+    options: window.writeOptions,
+    sendingDurability: window.sendingDurability,
+    committed: window.sendingCommitted,
+  }));
+  expect(proof.options.length).toBeGreaterThan(2);
+  expect(proof.options.every((option) => option === "strict")).toBe(true);
+  expect(proof.sendingDurability).toBe("strict");
+  expect(proof.committed).toBe(true);
+  api.gate = null;
+  release();
+  await expect
+    .poll(async () => Object.keys((await saved(page, "1")).outbox).length)
+    .toBe(0);
+});
+
+for (const behavior of ["ignored", "throws"])
+  test(`unsupported strict durability (${behavior}) never falls back or dispatches`, async ({
+    page,
+    context,
+  }) => {
+    const api = await mock(context, { user: 1 });
+    await page.goto("/");
+    await expect
+      .poll(async () => (await saved(page, "1")).lastSync)
+      .toBeTruthy();
+    await expect(page.locator("#sync")).toBeEnabled();
+    await page.evaluate(
+      async ({ note, behavior }) => {
+        const db = await import("/db.js");
+        await db.mutate("1", (s) => {
+          const record = {
+            id: "strict-pending",
+            text: note,
+            date: "2026-10-03",
+            version: 1,
+          };
+          s.records.push(record);
+          db.queueRecord(s, record);
+        });
+        const original = IDBDatabase.prototype.transaction;
+        window.attemptedWriteOptions = [];
+        IDBDatabase.prototype.transaction = function (...args) {
+          if (args[1] === "readwrite") {
+            window.attemptedWriteOptions.push(args[2]?.durability);
+            if (behavior === "throws")
+              throw new TypeError("options unsupported");
+            return original.call(this, args[0], args[1]);
+          }
+          return original.apply(this, args);
+        };
+      },
+      { note, behavior },
+    );
+    await page.locator("#sync").click();
+    await expect(page.locator("#storage-notice")).toContainText(
+      "Strict IndexedDB durability is unavailable",
+    );
+    expect(api.writes).toHaveLength(0);
+    const state = await saved(page, "1");
+    expect(state.records[0].text).toBe(note);
+    expect(state.outbox["strict-pending"].status).toBe("queued");
+    const attempts = await page.evaluate(() => window.attemptedWriteOptions);
+    expect(attempts.length).toBeGreaterThan(0);
+    expect(attempts.every((option) => option === "strict")).toBe(true);
+    const download = page.waitForEvent("download");
+    await page.locator("#export").click();
+    expect((await download).suggestedFilename()).toContain("djym-1-");
+  });
+
+test("a rejected pre-broadcast autosave exports its unsaved buffer before explicit editor review", async ({
+  page,
+  context,
+}) => {
+  await mock(context);
+  await page.goto("/");
+  await ready(page);
+  await complete(page);
+  await page.locator("#new-workout").click();
+  const draft = "04.10.2026 New draft\nSquat 50-8",
+    unsaved = "04.10.2026 Unsaved draft\nSquat 51-7";
+  await page.locator("#editor").fill(draft);
+  await ready(page);
+  // Delay delivery so typing races a committed edit transition, not just its UI notice.
+  await page.evaluate(async () => {
+    const { changes } = await import("/db.js");
+    const handler = changes.onmessage;
+    changes.onmessage = () => {};
+    window.deliverEditorBroadcast = () => handler();
+  });
+  const second = await context.newPage();
+  await second.goto("/");
+  await ready(second);
+  await second.locator("#history-toggle").click();
+  await second.locator(".record").click();
+  await second.locator("#edit-again").click();
+  await expect(second.locator("#edit-banner")).toBeVisible();
+  await page.locator("#editor").fill(unsaved);
+  await expect(page.locator("#save-status")).toHaveText("Not saved");
+  expect((await saved(page)).draft.text).toBe(draft);
+  expect((await saved(page)).edit.draft.text).toBe(note);
+  await page.evaluate(() => window.deliverEditorBroadcast());
+  await expect(page.locator("#editor-conflict")).toBeVisible();
+  await expect(page.locator("#editor")).toHaveValue(unsaved);
+  const downloadEvent = page.waitForEvent("download");
+  await page.locator("#review-editor").click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe("djym-unsaved-editor.json");
+  const recovered = JSON.parse(readFileSync(await download.path(), "utf8"));
+  expect(recovered.draft.text).toBe(unsaved);
+  expect(recovered.targetId).toBe(null);
+  await expect(page.locator("#editor")).toHaveValue(note);
+  await expect(page.locator("#complete")).toHaveText("Save changes");
+  expect((await saved(page)).records[0].text).toBe(note);
+});
