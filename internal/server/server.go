@@ -85,6 +85,7 @@ func newRouter(secret string, sessions sessionReader, h *handlers, health gin.Ha
 	router := gin.New()
 	router.Use(gin.Recovery())
 	registerDocs(router)
+	registerWeb(router)
 	router.Use(authenticate(secret, sessions))
 	router.GET(healthPath, health)
 	v1 := router.Group("/v1")

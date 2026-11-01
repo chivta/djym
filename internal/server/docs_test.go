@@ -114,7 +114,9 @@ func TestOpenAPIRouteCoverageAndAuthentication(t *testing.T) {
 		"POST /v1/users/{id}/exercises/replace": true,
 	}
 	for _, route := range r.Routes() {
-		if strings.HasPrefix(route.Path, "/swagger") {
+		_, publicAsset := webRoutes[route.Path]
+		// Public app assets are tested separately; OpenAPI describes the API.
+		if strings.HasPrefix(route.Path, "/swagger") || publicAsset {
 			continue
 		}
 		path := route.Path
@@ -166,7 +168,7 @@ func TestOpenAPIRouteCoverageAndAuthentication(t *testing.T) {
 				t.Errorf("anonymous API access to %s: %d", key, w.Code)
 			}
 		}
-		// Invalid bearer credentials still fail on every non-documentation route.
+		// Invalid bearer credentials still fail on every API route.
 		w := request(r, route.Method, route.Path, "", "Bearer invalid", "", "", "")
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("invalid bearer accepted on %s: %d", key, w.Code)

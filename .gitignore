@@ -1,3 +1,7 @@
 .env
 dumps/
 k8s/secrets.yaml
+
+node_modules/
+playwright-report/
+test-results/
